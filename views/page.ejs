@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Hex</title>
+    <link rel="icon" href="/assets/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet" href="/assets/bootstrap.min.css">
+</head>
+
+<body>
+    <div id="vue-app">
+        <p>Loading...</p>
+    </div>
+
+    <% for(var jsLocation of Object.values(manifest)) {%>
+        <script type="text/javascript" src="<%- jsLocation %>"></script>
+    <% } %>
+</body>
+
+</html>
