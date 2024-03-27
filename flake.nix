@@ -38,7 +38,7 @@
                   Database =
                     let pg-dir = ".database"; in {
                       create-db = {
-                        description = "create the local database and add a users table";
+                        description = "create the local database";
                         # internal = true;
                         script = ''
                           if [[ -e ${pg-dir} ]]; then
