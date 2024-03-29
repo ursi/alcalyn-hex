@@ -64,7 +64,7 @@
                         description = "stop the database server";
                         script = ''
                           lpg on ${pg-dir} down
-                          rm .env || true
+                          rm .env
                         '';
                       };
 
@@ -78,11 +78,11 @@
 
                       reset-db = {
                         description = "destroy (if it exists) and then recreate the local database";
-                        script =
-                          ''
-                            destroy-db
-                            create-db
-                          '';
+                        script = ''
+                          trap - ERR
+                          destroy-db
+                          create-db
+                        '';
                       };
 
                       destroy-db = {
