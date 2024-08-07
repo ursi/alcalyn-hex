@@ -37,7 +37,7 @@
 
                   Database =
                     let pg-dir = ".database"; in {
-                      create-db = {
+                      "db.create" = {
                         description = "create the local database";
                         # internal = true;
                         script = ''
@@ -45,14 +45,14 @@
                             echo database has already been created
                           else
                             lpg make ${pg-dir}
-                            db-server-start
+                            db.start
                             yarn db:sync
-                            db-server-stop
+                            db.stop
                           fi
                         '';
                       };
 
-                      db-server-start = {
+                      "db.start" = {
                         description = "start the database server";
                         script = ''
                           lpg on ${pg-dir} up
@@ -60,7 +60,7 @@
                         '';
                       };
 
-                      db-server-stop = {
+                      "db.stop" = {
                         description = "stop the database server";
                         script = ''
                           lpg on ${pg-dir} down
@@ -68,27 +68,27 @@
                         '';
                       };
 
-                      db-shell = {
+                      "db.shell" = {
                         description = "enter a psql shell for the local database";
                         script = ''
-                          db-server-start
+                          db.start
                           lpg on ${pg-dir} psql
                         '';
                       };
 
-                      reset-db = {
+                      "db.reset" = {
                         description = "destroy (if it exists) and then recreate the local database";
                         script = ''
                           trap - ERR
-                          destroy-db
-                          create-db
+                          db.destroy
+                          db.create
                         '';
                       };
 
-                      destroy-db = {
+                      "db.destroy" = {
                         description = "destroy the local database";
                         script = ''
-                          db-server-stop
+                          db.stop
                           rm ${pg-dir} -r
                         '';
                       };
