@@ -131,6 +131,8 @@ RANDOM_BOT_WAIT_BEFORE_PLAY=0
 
 - A functional test in auth.cy.ts needs at least one game in database to run fully.
 
+- On NixOS, you must run `Cypress` from the command line in the nix shell, then select the project with the GUI. `yarn test:e2e` will not work.
+
 ### Optimize js size
 
 ``` bash

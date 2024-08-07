@@ -101,6 +101,7 @@
         {
           devShells.default = p.mkShell {
             packages = with p; [
+              cypress
               nodejs
               openssl
               yarn
