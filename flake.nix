@@ -46,7 +46,7 @@
                           else
                             lpg make ${pg-dir}
                             db-server-start
-                            yarn prisma db push
+                            yarn db:sync
                             db-server-stop
                           fi
                         '';
