@@ -100,12 +100,10 @@
           lu-pkgs = lint-utils.packages.${system};
         in
         {
-          packages.default = p.prisma-engines;
           devShells.default = p.mkShell {
             packages = with p; [
               nodejs
               openssl
-              prisma-engines
               yarn
               (import inputs.local-postgres { inherit pkgs; })
             ];
@@ -114,10 +112,6 @@
               ${shelpers.functions}
               shelp
             '';
-
-            PRISMA_QUERY_ENGINE_LIBRARY = "${p.prisma-engines}/lib/libquery_engine.node";
-            PRISMA_QUERY_ENGINE_BINARY = "${p.prisma-engines}/bin/query-engine";
-            PRISMA_SCHEMA_ENGINE_BINARY = "${p.prisma-engines}/bin/schema-engine";
           };
 
           checks =
