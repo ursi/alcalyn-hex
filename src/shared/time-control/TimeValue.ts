@@ -2,7 +2,7 @@
  * Time data used to calculate time to be displayed on chrono.
  *
  * Depending whether time is running or paused:
- * - number: paused chrono
+ * - number: paused chrono, number of remaining milliseconds
  * - date: running chrono, date when chrono reaches 0:00.
  *
  * Depending whether time is countdown or incrementing:
@@ -13,9 +13,14 @@ type TimeValue = Date | number;
 
 export default TimeValue;
 
-export const timeValueToSeconds = (timeValue: TimeValue): number => {
-    return timeValue instanceof Date
-        ? (timeValue.getTime() - new Date().getTime()) / 1000
-        : timeValue
-    ;
+/**
+ * Convert a elasping or not time value to milliseconds, from a given date.
+ * date can be new Date(), or server date.
+ */
+export const timeValueToMilliseconds = (timeValue: TimeValue, date: Date): number => {
+    if (timeValue instanceof Date) {
+        return timeValue.getTime() - date.getTime();
+    }
+
+    return timeValue;
 };

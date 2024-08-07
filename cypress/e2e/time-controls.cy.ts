@@ -3,10 +3,10 @@ describe('Time controls', () => {
         cy.visit('/');
         cy.get('.menu-top').contains(/Guest \d+/);
 
-        cy.contains('Play vs AI').click();
+        cy.createAIGameWithRandom(false);
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains('Custom')
             .click()
@@ -18,7 +18,7 @@ describe('Time controls', () => {
 
         // I must play first to keep full time for my opponent and make assertions on his time
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains(/^First$/)
             .click()
@@ -27,18 +27,16 @@ describe('Time controls', () => {
 
     it('create a game with default 10 minutes for each player', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
 
             .contains('Time control')
             .closest('div')
             .contains('Normal 10 + 5')
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
+
+        cy.submitAIGame();
 
         cy.contains('Determinist random bot');
         cy.contains('10:00');
@@ -46,18 +44,16 @@ describe('Time controls', () => {
 
     it('create a game with default 5 minutes for each player', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
 
             .contains('Time control')
             .closest('div')
             .contains('Fast 5 + 2')
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
+
+        cy.submitAIGame();
 
         cy.contains('Determinist random bot');
         cy.contains('5:00');
@@ -65,7 +61,7 @@ describe('Time controls', () => {
 
     it('create a game with custom time control, Byo Yomi', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
 
             .contains('Time control')
@@ -75,20 +71,15 @@ describe('Time controls', () => {
         ;
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
-            .contains('Use Byo-yomi')
+            .contains('Use Byo-Yomi')
             .click()
         ;
 
         cy.contains('Periods:');
 
-        cy
-            .contains('Game options')
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
-        ;
+        cy.submitAIGame();
 
         cy.contains('Determinist random bot');
         cy.contains('10:00 + 5 × 5s');
@@ -96,7 +87,33 @@ describe('Time controls', () => {
 
     it('create a game with custom time control, Fischer', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
+            .closest('.modal-content')
+
+            .contains('Time control')
+            .closest('div')
+            .contains('Custom')
+            .click()
+        ;
+
+        cy.submitAIGame();
+
+        cy.contains('Determinist random bot');
+        cy.contains('10:00');
+    });
+
+    it('cancels a game when timeout with only one move', () => {
+        // Plays a second to make a one-move game
+        cy
+            .contains('h5', 'Play vs AI')
+            .closest('.modal-content')
+            .contains(/^Second$/)
+            .click()
+        ;
+
+        // Put minimal time
+        cy
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
 
             .contains('Time control')
@@ -106,13 +123,17 @@ describe('Time controls', () => {
         ;
 
         cy
-            .contains('Game options')
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
+            .get('input#custom-fischer-initial-time')
+            .invoke('val', 0)
+            .trigger('input')
         ;
 
-        cy.contains('Determinist random bot');
-        cy.contains('10:00');
+        cy.submitAIGame();
+
+        cy.contains('Game has been canceled', { timeout: 8000 });
+        cy.contains('.modal-content .modal-footer', 'Close').click();
+        cy.contains('.player-b', '0:00.0');
+
+        cy.contains('.sidebar', 'Game has been canceled');
     });
 });

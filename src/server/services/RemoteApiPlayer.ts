@@ -3,7 +3,7 @@ import { Game, IllegalMove, Move } from '../../shared/game-engine';
 import HexAiApiClient, { CalculateMoveRequest } from './HexAiApiClient';
 import { TimeMeasureMetric } from './metrics';
 import { Service } from 'typedi';
-import HostedGame from '../HostedGame';
+import HostedGameServer from '../HostedGameServer';
 
 @Service()
 export default class RemoteApiPlayer
@@ -14,19 +14,10 @@ export default class RemoteApiPlayer
 
     private async fetchMove(engine: string, game: Game, config: { [key: string]: unknown }): Promise<Move>
     {
-        const moveHistory = game
-            .getMovesHistory()
-            .map(move => move.toString())
-        ;
-
-        if (game.hasSwapMove()) {
-            moveHistory[1] = 'swap-pieces';
-        }
-
         const payload: CalculateMoveRequest = {
             game: {
                 size: game.getSize(),
-                movesHistory: moveHistory.join(' '),
+                movesHistory: game.getMovesHistoryAsString(),
                 currentPlayer: 0 === game.getCurrentPlayerIndex() ? 'black' : 'white',
                 swapRule: game.getAllowSwap(),
             },
@@ -36,17 +27,13 @@ export default class RemoteApiPlayer
             },
         };
 
-        const moveString = await this.hexRemotePlayerApi.calculateMove(payload);
+        let moveString: null | string = null;
 
         try {
+            moveString = await this.hexRemotePlayerApi.calculateMove(payload);
+
             if ('swap-pieces' === moveString) {
-                const swapedMove = game.getFirstMove();
-
-                if (null === swapedMove) {
-                    throw new Error('"swap-pieces" only available on first move');
-                }
-
-                return swapedMove.clone();
+                return Move.swapPieces();
             }
 
             if ('resign' === moveString) {
@@ -55,14 +42,14 @@ export default class RemoteApiPlayer
 
             return Move.fromString(moveString);
         } catch (e) {
-            logger.error(`Unexpected remote player move: "${moveString}"`);
+            logger.error(`Unexpected remote player move: "${moveString ?? '(api error)'}"`, { error: e.message });
             throw new Error(e);
         }
     }
 
-    async makeMove(engine: string, hostedGame: HostedGame, config: { [key: string]: unknown }): Promise<null | Move>
+    async makeMove(engine: string, hostedGameServer: HostedGameServer, config: { maxGames?: number, treeSearch?: boolean }): Promise<null | Move>
     {
-        const game = hostedGame.getGame();
+        const game = hostedGameServer.getGame();
 
         if (null === game) {
             throw new Error('Cannot send move request to api, no game');
@@ -70,9 +57,9 @@ export default class RemoteApiPlayer
 
         const measure = new TimeMeasureMetric('ai_time_to_respond', {
             engine,
-            level: 20,
+            level: config.maxGames ?? (config.treeSearch ? 500000 : 0) ?? -1,
             boardsize: game.getSize(),
-            gameId: hostedGame.getId(),
+            gameId: hostedGameServer.getId(),
         });
 
         try {

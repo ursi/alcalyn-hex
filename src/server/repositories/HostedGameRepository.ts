@@ -1,22 +1,23 @@
-import { Service } from 'typedi';
-import HostedGame from '../HostedGame';
-import { Move } from '../../shared/game-engine';
-import { HostedGameData, HostedGameState } from '../../shared/app/Types';
-import Player from '../../shared/app/models/Player';
-import { GameOptionsData } from '../../shared/app/GameOptions';
-import { MoveData } from '../../shared/game-engine/Types';
+import { Inject, Service } from 'typedi';
+import HostedGameServer from '../HostedGameServer';
+import { HostedGameState } from '../../shared/app/Types';
+import { Player, ChatMessage, HostedGame, HostedGameOptions, Move, Rating } from '../../shared/app/models';
 import { canChatMessageBePostedInGame } from '../../shared/app/chatUtils';
 import HostedGamePersister from '../persistance/HostedGamePersister';
 import logger from '../services/logger';
-import { Prisma } from '@prisma/client';
-import ChatMessage from '../../shared/app/models/ChatMessage';
-import prisma from '../services/prisma';
 import { validateOrReject } from 'class-validator';
-import { plainToInstance } from 'class-transformer';
 import Rooms from '../../shared/app/Rooms';
 import { HexServer } from '../server';
+import { FindAIError, findAIOpponent } from '../services/AIManager';
+import { Repository } from 'typeorm';
+import { cloneGameOptions } from '../../shared/app/models/HostedGameOptions';
+import { AppDataSource } from '../data-source';
+import { plainToInstance } from '../../shared/app/class-transformer-custom';
+import RatingRepository from './RatingRepository';
 
-const byRecentFirst = (game0: HostedGameData, game1: HostedGameData): number => {
+export class GameError extends Error {}
+
+const byRecentFirst = (game0: HostedGame, game1: HostedGame): number => {
     const date0 = game0.gameData?.endedAt ?? game0.createdAt;
     const date1 = game1.gameData?.endedAt ?? game1.createdAt;
 
@@ -33,7 +34,7 @@ export default class HostedGameRepository
      * Each playing game can contains a persisted copy,
      * but the most updated game should be in memory.
      */
-    private activeGames: { [key: string]: HostedGame } = {};
+    private activeGames: { [key: string]: HostedGameServer } = {};
 
     /**
      * Keep timeout thread id of hosted games to persist in N minutes
@@ -45,30 +46,43 @@ export default class HostedGameRepository
     constructor(
         private hostedGamePersister: HostedGamePersister,
         private io: HexServer,
+        private ratingRepository: RatingRepository,
+
+        @Inject('Repository<ChatMessage>')
+        private chatMessageRepository: Repository<ChatMessage>,
+
+        @Inject('Repository<Player>')
+        private playerRepository: Repository<Player>,
     ) {
         this.loadActiveGamesFromMemory();
     }
 
     private async loadActiveGamesFromMemory(): Promise<void>
     {
+        logger.info('Loading active games from memory...');
+
+        await AppDataSource.initialize();
+
         const games = await this.hostedGamePersister.findMany({
-            where: {
-                OR: [
-                    { state: 'created' },
-                    { state: 'playing' },
-                ],
-            },
+            where: [
+                { state: 'created' },
+                { state: 'playing' },
+            ],
         });
 
-        games.forEach(hostedGameData => {
-            if (this.activeGames[hostedGameData.id]) {
+        for (const hostedGame of games) {
+            logger.info(`Loading game ${hostedGame.publicId}...`);
+
+            if (this.activeGames[hostedGame.publicId]) {
                 return;
             }
 
-            this.activeGames[hostedGameData.id] = HostedGame.fromData(hostedGameData);
+            this.activeGames[hostedGame.publicId] = HostedGameServer.fromData(hostedGame);
 
-            this.enableAutoPersist(this.activeGames[hostedGameData.id]);
-        });
+            this.listenHostedGameServer(this.activeGames[hostedGame.publicId]);
+        }
+
+        logger.info(`${games.length} games loaded.`);
     }
 
     /**
@@ -95,58 +109,123 @@ export default class HostedGameRepository
         return allSuccess;
     }
 
-    /**
-     * Auto persist game when needed.
-     * Also flush it from memory.
-     */
-    private enableAutoPersist(hostedGame: HostedGame): void
+    private listenHostedGameServer(hostedGameServer: HostedGameServer): void
     {
-        // Persist on no activity
-        const resetTimeout = (): void => {
-            if (this.persistWhenNoActivity[hostedGame.getId()]) {
-                clearTimeout(this.persistWhenNoActivity[hostedGame.getId()]);
-                delete this.persistWhenNoActivity[hostedGame.getId()];
-            }
-        };
-
-        // Persist on ended
-        const onEnded = () => {
-            resetTimeout();
-            this.hostedGamePersister.persist(hostedGame.toData());
-            delete this.activeGames[hostedGame.getId()];
-        };
-
-        if ('ended' === hostedGame.getState() || 'canceled' === hostedGame.getState()) {
-            onEnded();
-        } else {
-            hostedGame.on('ended', onEnded);
-            hostedGame.on('canceled', onEnded);
+        if ('ended' === hostedGameServer.getState()) {
+            this.onGameEnded(hostedGameServer);
+            return;
         }
 
-        // Keep alive again when activity done on this game
-        const onActivity = (): void => {
-            resetTimeout();
-            this.persistWhenNoActivity[hostedGame.getId()] = setTimeout(
-                () => this.hostedGamePersister.persist(hostedGame.toData()),
-                300 * 1000, // Persist after 5min inactivity
-            );
-        };
+        if ('canceled' === hostedGameServer.getState()) {
+            this.onGameCanceled(hostedGameServer);
+            return;
+        }
 
-        hostedGame.on('played', onActivity);
-        hostedGame.on('chat', onActivity);
+        this.persistAfterDelayOfInactivity(hostedGameServer);
+
+        hostedGameServer.on('ended', () => this.onGameEnded(hostedGameServer));
+        hostedGameServer.on('canceled', () => this.onGameCanceled(hostedGameServer));
     }
 
-    getActiveGames(): { [key: string]: HostedGame }
+    /**
+     * Activity made on a game, makes persist in new 5 minutes
+     */
+    private resetActivityTimeout(hostedGameServer: HostedGameServer): void
+    {
+        this.clearActivityTimeout(hostedGameServer);
+        this.persistWhenNoActivity[hostedGameServer.getId()] = setTimeout(
+            () => this.hostedGamePersister.persist(hostedGameServer.toData()),
+            300 * 1000, // Persist after 5min inactivity
+        );
+    }
+
+    /**
+     * Cancel planned persist
+     */
+    private clearActivityTimeout(hostedGameServer: HostedGameServer): void
+    {
+        if (this.persistWhenNoActivity[hostedGameServer.getId()]) {
+            clearTimeout(this.persistWhenNoActivity[hostedGameServer.getId()]);
+            delete this.persistWhenNoActivity[hostedGameServer.getId()];
+        }
+    }
+
+    /**
+     * Persist game when no activity in case server restart
+     */
+    private persistAfterDelayOfInactivity(hostedGameServer: HostedGameServer): void
+    {
+        hostedGameServer.on('played', () => this.resetActivityTimeout(hostedGameServer));
+        hostedGameServer.on('chat', () => this.resetActivityTimeout(hostedGameServer));
+    }
+
+    /**
+     * Flush game from memory, persist into database
+     */
+    private async flushHostedGame(hostedGameServer: HostedGameServer): Promise<void>
+    {
+        this.clearActivityTimeout(hostedGameServer);
+        const hostedGame = hostedGameServer.toData();
+        await this.hostedGamePersister.persist(hostedGame);
+        delete this.activeGames[hostedGameServer.getId()];
+    }
+
+    /**
+     * Things to do when game has ended
+     */
+    private async onGameEnded(hostedGameServer: HostedGameServer): Promise<void>
+    {
+        await this.flushHostedGame(hostedGameServer);
+
+        if (hostedGameServer.toData().gameOptions.ranked) {
+            const newRatings = await this.updateRatings(hostedGameServer);
+
+            this.io
+                .to([
+                    Rooms.game(hostedGameServer.getId()),
+                    Rooms.lobby,
+                ])
+                .emit(
+                    'ratingsUpdated',
+                    hostedGameServer.getId(),
+                    newRatings.filter(rating => 'overall' === rating.category),
+                )
+            ;
+        }
+    }
+
+    /**
+     * Things to do when game has canceled
+     */
+    private async onGameCanceled(hostedGameServer: HostedGameServer): Promise<void>
+    {
+        await this.flushHostedGame(hostedGameServer);
+    }
+
+    /**
+     * Update players ratings
+     */
+    private async updateRatings(hostedGameServer: HostedGameServer): Promise<Rating[]>
+    {
+        const newRatings = await this.ratingRepository.updateAfterGame(hostedGameServer.toData());
+
+        await this.ratingRepository.persistRatings(newRatings);
+        await this.playerRepository.save(hostedGameServer.getPlayers());
+
+        return newRatings;
+    }
+
+    getActiveGames(): { [key: string]: HostedGameServer }
     {
         return this.activeGames;
     }
 
-    getActiveGame(gameId: string): null | HostedGame
+    getActiveGame(gameId: string): null | HostedGameServer
     {
         return this.activeGames[gameId] ?? null;
     }
 
-    getActiveGamesData(): HostedGameData[]
+    getActiveGamesData(): HostedGame[]
     {
         return Object.values(this.activeGames)
             .map(game => game.toData())
@@ -154,34 +233,19 @@ export default class HostedGameRepository
     }
 
     /**
+     * Get finished games; bot games are ignored.
      * @param fromGamePublicId Take N ended games from fromGamePublicId, or from start if not set.
      */
-    async getEndedGames(take = 10, fromGamePublicId?: string): Promise<HostedGameData[]>
+    async getEndedGames(take = 10, fromGamePublicId?: string): Promise<HostedGame[]>
     {
-        const args: Prisma.HostedGameFindManyArgs = {
-            where: { state: 'ended' },
-            orderBy: [
-                { game: { endedAt: 'desc' } },
-                { publicId: 'desc' }, // In case 2 games has same endedAt datetime, must keep a consistent order
-            ],
-            take,
-        };
-
-        if (undefined !== fromGamePublicId) {
-            args.skip = 1;
-            args.cursor = {
-                publicId: fromGamePublicId,
-            };
-        }
-
-        return await this.hostedGamePersister.findMany(args);
+        return await this.hostedGamePersister.findLastEnded1v1(take, fromGamePublicId);
     }
 
     /**
      * Returns games to display initially on lobby.
      * Active games, plus some ended games.
      */
-    async getLobbyGames(): Promise<HostedGameData[]>
+    async getLobbyGames(): Promise<HostedGame[]>
     {
         const lobbyGames = this.getActiveGamesData();
         const endedGames = await this.getEndedGames(5);
@@ -191,7 +255,7 @@ export default class HostedGameRepository
         return lobbyGames;
     }
 
-    async getGame(publicId: string): Promise<HostedGameData | null>
+    async getGame(publicId: string): Promise<HostedGame | null>
     {
         if (this.activeGames[publicId]) {
             return this.activeGames[publicId].toData();
@@ -200,19 +264,64 @@ export default class HostedGameRepository
         return await this.hostedGamePersister.findUnique(publicId);
     }
 
-    async createGame(host: Player, gameOptions: GameOptionsData, opponent: null | Player = null): Promise<HostedGame>
+    async createGame(host: Player, gameOptions: HostedGameOptions): Promise<HostedGameServer>
     {
-        const hostedGame = HostedGame.hostNewGame(gameOptions, host);
+        const hostedGame = HostedGameServer.hostNewGame(gameOptions, host);
 
-        if (null !== opponent) {
-            hostedGame.playerJoin(opponent);
+        if ('ai' === gameOptions.opponentType) {
+            try {
+                const opponent = await findAIOpponent(gameOptions);
+                if (opponent == null) throw new GameError('No matching AI found');
+                hostedGame.playerJoin(opponent);
+            } catch (e) {
+                if (e instanceof FindAIError) {
+                    throw new GameError(e.message);
+                }
+                throw e;
+            }
         }
 
         this.activeGames[hostedGame.getId()] = hostedGame;
 
-        this.enableAutoPersist(hostedGame);
+        this.listenHostedGameServer(hostedGame);
 
         return hostedGame;
+    }
+
+    async rematchGame(host: Player, gameId: string): Promise<HostedGameServer>
+    {
+        const game = await this.getGame(gameId);
+
+        if (null === game) {
+            throw new GameError(`no game ${gameId}`);
+        }
+        if (!game.hostedGameToPlayers.some(p => p.player.publicId === host.publicId)) {
+            throw new GameError('Player not in the game');
+        }
+        if (game.rematch != null && this.activeGames[game.rematch.publicId]) {
+            return this.activeGames[game.rematch.publicId];
+        }
+        if (game.rematch != null) {
+            throw new GameError('An inactive rematch game already exists');
+        }
+        if (this.activeGames[gameId]) {
+            throw new GameError('Cannot rematch an active game');
+        }
+
+        const rematch = await this.createGame(host, cloneGameOptions(game.gameOptions));
+        this.io.to(Rooms.game(game.publicId))
+            .emit('rematchAvailable', game.publicId, rematch.getId());
+
+        game.rematch = rematch.toData();
+
+        try {
+            await this.hostedGamePersister.persist(game.rematch);
+            await this.hostedGamePersister.persistLinkToRematch(game);
+        } catch (e) {
+            logger.error(`Failed to persist: ${e?.message}`, e);
+        }
+
+        return rematch;
     }
 
     /**
@@ -222,8 +331,8 @@ export default class HostedGameRepository
         player: Player,
         state: null | HostedGameState = null,
         fromGamePublicId: null | string = null,
-    ): Promise<HostedGameData[]> {
-        const hostedGameDataList: HostedGameData[] = [];
+    ): Promise<HostedGame[]> {
+        const hostedGameList: HostedGame[] = [];
 
         for (const key in this.activeGames) {
             if (!this.activeGames[key].isPlayerInGame(player)) {
@@ -234,38 +343,15 @@ export default class HostedGameRepository
                 continue;
             }
 
-            hostedGameDataList.push(this.activeGames[key].toData());
+            hostedGameList.push(this.activeGames[key].toData());
         }
 
-        hostedGameDataList.sort(byRecentFirst);
+        const gamesFromDb = await this.hostedGamePersister.findLastEndedByPlayer(player, fromGamePublicId ?? undefined);
 
-        const criteria: Prisma.HostedGameFindManyArgs = {
-            where: {
-                state: state ?? undefined,
-                players: {
-                    some: {
-                        player: {
-                            publicId: player.publicId,
-                        },
-                    },
-                },
-            },
-            orderBy: {
-                createdAt: 'desc',
-            },
-            take: 20,
-        };
+        hostedGameList.push(...gamesFromDb);
+        hostedGameList.sort(byRecentFirst);
 
-        if (null !== fromGamePublicId) {
-            criteria.cursor = { publicId: fromGamePublicId };
-            criteria.skip = 1;
-        }
-
-        const gamesFromDb = await this.hostedGamePersister.findMany(criteria);
-
-        hostedGameDataList.push(...gamesFromDb);
-
-        return hostedGameDataList;
+        return hostedGameList;
     }
 
     async playerJoinGame(player: Player, gameId: string): Promise<string | true>
@@ -285,7 +371,7 @@ export default class HostedGameRepository
         return true;
     }
 
-    async playerMove(player: Player, gameId: string, move: MoveData): Promise<string | true>
+    async playerMove(player: Player, gameId: string, move: Move): Promise<string | true>
     {
         const hostedGame = this.activeGames[gameId];
 
@@ -293,7 +379,33 @@ export default class HostedGameRepository
             return 'no game ' + gameId;
         }
 
-        const result = hostedGame.playerMove(player, new Move(move.row, move.col));
+        const result = hostedGame.playerMove(player, move);
+
+        return result;
+    }
+
+    async playerAskUndo(player: Player, gameId: string): Promise<string | true>
+    {
+        const hostedGame = this.activeGames[gameId];
+
+        if (!hostedGame) {
+            return 'no game ' + gameId;
+        }
+
+        const result = hostedGame.playerAskUndo(player);
+
+        return result;
+    }
+
+    async playerAnswerUndo(player: Player, gameId: string, accept: boolean): Promise<string | true>
+    {
+        const hostedGame = this.activeGames[gameId];
+
+        if (!hostedGame) {
+            return 'no game ' + gameId;
+        }
+
+        const result = hostedGame.playerAnswerUndo(player, accept);
 
         return result;
     }
@@ -324,63 +436,53 @@ export default class HostedGameRepository
         return result;
     }
 
-    async postChatMessage(chatMessage: ChatMessage): Promise<string | true>
+    /**
+     * @param publicId HostedGame public id to post message on.
+     * @param chatMessage ChatMessage to post, with player, content and date.
+     */
+    async postChatMessage(publicId: string, chatMessage: ChatMessage): Promise<string | true>
     {
         try {
             await validateOrReject(plainToInstance(ChatMessage, chatMessage), {
                 groups: ['post'],
             });
         } catch (e) {
-            logger.error({ validationError: e });
+            logger.error('Validation failed', { validationError: e });
             return e.message;
         }
 
-        const { gameId } = chatMessage;
-        const hostedGame = this.activeGames[gameId];
+        const hostedGameServer = this.activeGames[publicId];
 
         // Game is in memory, push chat message
-        if (hostedGame) {
+        if (hostedGameServer) {
             let error: true | string;
-            if (true !== (error = canChatMessageBePostedInGame(chatMessage, hostedGame.toData()))) {
+            if (true !== (error = canChatMessageBePostedInGame(chatMessage, hostedGameServer.toData()))) {
                 return error;
             }
 
-            hostedGame.postChatMessage(chatMessage);
+            hostedGameServer.postChatMessage(chatMessage);
             return true;
         }
 
         // Game is not in memory, store chat message directly in database, on persisted game
-        const hostedGameData = await this.hostedGamePersister.findUnique(chatMessage.gameId);
+        const hostedGame = await this.hostedGamePersister.findUnique(publicId);
 
-        if (null === hostedGameData) {
+        if (null === hostedGame) {
             logger.notice('Tried to chat on a non-existant game', { chatMessage });
-            return `Game ${chatMessage.gameId} not found`;
+            return `Game ${publicId} not found`;
         }
 
         let error: true | string;
-        if (true !== (error = canChatMessageBePostedInGame(chatMessage, hostedGameData))) {
+        if (true !== (error = canChatMessageBePostedInGame(chatMessage, hostedGame))) {
             return error;
         }
 
-        // Game is in database, insert chat message into database
-        await prisma.chatMessage.create({
-            data: {
-                content: chatMessage.content,
-                createdAt: chatMessage.createdAt,
-                hostedGame: {
-                    connect: {
-                        publicId: hostedGameData.id,
-                    },
-                },
-                player: {
-                    connect: {
-                        publicId: chatMessage.author?.publicId,
-                    },
-                },
-            },
-        });
+        chatMessage.hostedGame = hostedGame;
 
-        this.io.to(Rooms.game(chatMessage.gameId)).emit('chat', { ...chatMessage });
+        // Game is in database, insert chat message into database
+        await this.chatMessageRepository.save(chatMessage);
+
+        this.io.to(Rooms.game(publicId)).emit('chat', publicId, chatMessage);
 
         return true;
     }

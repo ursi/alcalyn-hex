@@ -1,3 +1,4 @@
+import { GameAnalyzeData } from '@shared/app/models/GameAnalyze';
 import { Service } from 'typedi';
 
 /*
@@ -17,7 +18,7 @@ export type CalculateMoveRequest = {
 
         /**
          * Like "f6 g7 d4"
-         * Or "g5 swap-pieces g4".
+         * Or "g5 swap-pieces g4 pass".
          * In swap-pieces case, g5 black has become e7 white, then black played g4.
          */
         movesHistory: string;
@@ -47,6 +48,11 @@ export type CalculateMoveRequest = {
  * Can be "f6", "swap-pieces", "resign"
  */
 export type CalculateMoveResponse = 'swap-pieces' | 'resign' | string;
+
+export type AnalyzeGameRequest = {
+    size: number;
+    movesHistory: string;
+};
 
 export type PeerStatusData = {
     totalPeers: number;
@@ -78,6 +84,24 @@ export default class HexAiApiClient
         });
 
         return await response.text();
+    }
+
+    async analyzeGame(payload: AnalyzeGameRequest): Promise<GameAnalyzeData>
+    {
+        if (!HEX_AI_API) {
+            throw new Error('Cannot use HexAiApiClient, HEX_AI_API must be set in env vars');
+        }
+
+        const response = await fetch(HEX_AI_API + '/analyze-game', {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        return await response.json();
     }
 
     async getPeersStatus(): Promise<PeerStatusData>

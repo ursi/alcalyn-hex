@@ -12,12 +12,19 @@ import PlayerRepository from '../../../repositories/PlayerRepository';
 import Player from '../../../../shared/app/models/Player';
 import ChatController from './ChatController';
 import AIConfigController from './AIConfigController';
+import GameAnalyzeController from './GameAnalyzeController';
+import RatingController from './RatingController';
+import { defaultInstanceToPlainOptions, defaultPlainToInstanceOptions } from '../../../../shared/app/class-transformer-custom';
+import ServerInfoController from './ServerInfoController';
 
 export const registerApi = (app: Express) => {
 
     useContainer(Container);
     useExpressServer(app, {
         defaultErrorHandler: false,
+        classTransformer: true,
+        classToPlainTransformOptions: defaultInstanceToPlainOptions,
+        plainToClassTransformOptions: defaultPlainToInstanceOptions,
         validation: {
             whitelist: true,
             forbidNonWhitelisted: true,
@@ -63,12 +70,15 @@ export const registerApi = (app: Express) => {
         controllers: [
             OnlinePlayersController,
             GameController,
+            GameAnalyzeController,
             ChatController,
             PlayerController,
             AuthController,
             PlayerSettingsController,
             AdminController,
             AIConfigController,
+            RatingController,
+            ServerInfoController,
         ],
     });
 

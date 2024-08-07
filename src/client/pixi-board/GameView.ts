@@ -1,5 +1,5 @@
 import { Game, Move, PlayerIndex } from '@shared/game-engine';
-import { Application, Container, Graphics, ICanvas, IPointData, Text, TextStyle } from 'pixi.js';
+import { Application, Container, Graphics, ICanvas, PointData, Text, TextStyle } from 'pixi.js';
 import Hex from '@client/pixi-board/Hex';
 import { Theme, themes } from '@client/pixi-board/BoardTheme';
 import { TypedEmitter } from 'tiny-typed-emitter';
@@ -8,7 +8,10 @@ import SwapableSprite from './SwapableSprite';
 import SwapedSprite from './SwapedSprite';
 import { Coords } from '@shared/game-engine/Types';
 import useDarkLightThemeStore from '../stores/darkLightThemeStore';
+import usePlayerSettingsStore from '../stores/playerSettingsStore';
+import usePlayerLocalSettingsStore from '../stores/playerLocalSettingsStore';
 import { WatchStopHandle, watch } from 'vue';
+import { createShadingPattern } from '../../shared/app/shading-patterns';
 
 const { min, max, sin, cos, sqrt, ceil, PI } = Math;
 const SQRT_3_2 = sqrt(3) / 2;
@@ -16,75 +19,10 @@ const PI_3 = PI / 3;
 const PI_6 = PI / 6;
 
 /**
- * Orientation names from
- * https://www.hexwiki.net/index.php/Conventions
- */
-export type OrientationName =
-    /**
-     * Displayed as horizontal diamond.
-     * Recommended for large screen.
-     */
-    'diamond'
-
-    /**
-     * Displayed as vertical diamond.
-     */
-    | 'vertical_diamond'
-
-    /**
-     *  __
-     *  \_\
-     */
-    | 'flat'
-
-    /**
-     *   __
-     *  /_/
-     */
-    | 'flat_2'
-
-    /**
-     * Displayed as vertical,
-     * but not symmetric         /|
-     * to optimize screen space. |/
-     * Recommended for mobile screens.
-     */
-    | 'vertical_flat'
-
-    /**
-     * Same as right_hand, but board goes |\
-     * from top left to bottom right.     \|
-     */
-    | 'vertical_flat_2'
-;
-
-const orientationNameToRotation = (orientationName: OrientationName): number => {
-    switch (orientationName) {
-        case 'diamond':
-            return 11;
-
-        case 'vertical_diamond':
-            return 2;
-
-        case 'flat':
-            return 0;
-
-        case 'flat_2':
-            return 10;
-
-        case 'vertical_flat':
-            return 9;
-
-        case 'vertical_flat_2':
-            return 1;
-    }
-};
-
-/**
  * Integer, every PI/6.
  * Or an orientation depending on screen orientation.
  */
-type OrientationValue = number | { landscape: number, portrait: number };
+type PreferredOrientations = { landscape: number, portrait: number };
 
 export type GameViewSize = {
     width: number;
@@ -95,7 +33,7 @@ type GameViewEvents = {
     /**
      * A hex has been clicked on the view.
      */
-    hexClicked: (move: Move) => void;
+    hexClicked: (coords: Coords) => void;
 
     /**
      * Game has ended, and win animation is over.
@@ -114,23 +52,31 @@ export default class GameView extends TypedEmitter<GameViewEvents>
     private pixi: Application;
     private gameContainer: Container = new Container();
 
-    private orientation: OrientationValue = {
-        landscape: orientationNameToRotation('diamond'),
-        portrait: orientationNameToRotation('vertical_flat'),
+    private preferredOrientations: PreferredOrientations = {
+        landscape: 11, // Diamond
+        portrait: 9, // Vertical flat
     };
 
     private currentOrientation: number;
 
     private sidesGraphics: [Graphics, Graphics];
     private displayCoords = false;
+
+    private lastSimpleMoveHighlighted: null | Coords = null;
     private swapable: SwapableSprite;
     private swaped: SwapedSprite;
-    private previewedMove: null | { coords: Coords, playerIndex: PlayerIndex } = null;
+
+    private previewedMove: null | { move: Move, playerIndex: PlayerIndex } = null;
 
     private resizeObserver: null | ResizeObserver = null;
     private themeSwitchedListener = () => this.redraw();
+    private settingsChangedListener = () => this.redraw();
 
     private unwatchThemeSwitchedListener: WatchStopHandle;
+    private unwatchSettingsChangedListener: WatchStopHandle;
+    private unwatchLocalSettingsChangedListener: WatchStopHandle;
+
+    private initPromise: Promise<void>;
 
     constructor(
         private game: Game,
@@ -146,26 +92,73 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
         GameView.currentTheme = themes[useDarkLightThemeStore().displayedTheme()];
 
-        this.pixi = new Application({
+        this.pixi = new Application();
+
+        this.initPromise = this.pixi.init({
             antialias: true,
             backgroundAlpha: 0,
             resolution: ceil(window.devicePixelRatio),
             autoDensity: true,
-            resizeTo: containerElement,
+            resizeTo: this.containerElement,
             ...this.getWrapperSize(),
         });
 
-        this.listenContainerElementResize();
+        (async () => {
+            await this.ready();
 
-        this.pixi.stage.addChild(this.gameContainer);
+            this.listenContainerElementResize();
 
-        this.redraw();
-        this.listenModel();
+            this.pixi.stage.addChild(this.gameContainer);
 
-        this.unwatchThemeSwitchedListener = watch(useDarkLightThemeStore().displayedTheme, this.themeSwitchedListener);
+            this.redraw();
+            this.listenModel();
 
-        if (this.game.isEnded()) {
-            this.endedCallback();
+            this.unwatchThemeSwitchedListener = watch(useDarkLightThemeStore().displayedTheme, this.themeSwitchedListener);
+            this.unwatchSettingsChangedListener = watch(() => usePlayerSettingsStore().playerSettings, this.settingsChangedListener, { deep: true });
+            this.unwatchLocalSettingsChangedListener = watch(() => usePlayerLocalSettingsStore().localSettings.selectedBoardOrientation, this.settingsChangedListener);
+
+            if (this.game.isEnded()) {
+                this.highlightSidesFromGame();
+                this.animateWinningPath();
+            }
+        })();
+    }
+
+    async ready(): Promise<void>
+    {
+        return this.initPromise;
+    }
+
+    /**
+     * Returns which board orientation should be used
+     * from game view wrapper ratio, and user preferred orientations for landscape and portrait.
+     */
+    getComputedBoardOrientation(): number
+    {
+        const wrapperSize = this.getWrapperSize();
+        const { selectedBoardOrientation } = usePlayerLocalSettingsStore().localSettings;
+
+        if ('auto' === selectedBoardOrientation) {
+            return wrapperSize.width > wrapperSize.height
+                ? this.preferredOrientations.landscape
+                : this.preferredOrientations.portrait
+            ;
+        }
+
+        return this.preferredOrientations[selectedBoardOrientation];
+    }
+
+    /**
+     * Re-check screen ratio to change board orientation if needed
+     */
+    private updateOrientation(): void
+    {
+        const previousCurrentOrientation = this.currentOrientation;
+
+        this.currentOrientation = this.getComputedBoardOrientation();
+
+        if (previousCurrentOrientation !== this.currentOrientation) {
+            this.emit('orientationChanged');
         }
     }
 
@@ -176,20 +169,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
         this.gameContainer.removeChildren();
 
-        const previousCurrentOrientation = this.currentOrientation;
-
-        if (typeof this.orientation === 'number') {
-            this.currentOrientation = this.orientation;
-        } else {
-            this.currentOrientation = wrapperSize.width > wrapperSize.height
-                ? this.orientation.landscape
-                : this.orientation.portrait
-            ;
-        }
-
-        if (previousCurrentOrientation !== this.currentOrientation) {
-            this.emit('orientationChanged');
-        }
+        this.updateOrientation();
 
         this.gameContainer.rotation = this.currentOrientation * PI_6;
 
@@ -220,8 +200,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.highlightSidesFromGame();
 
         if (null !== this.previewedMove) {
-            const { coords, playerIndex } = this.previewedMove;
-            this.hexes[coords.row][coords.col].previewMove(playerIndex);
+            const { move, playerIndex } = this.previewedMove;
+            this.previewMove(move, playerIndex);
         }
 
         this.gameContainer.addChild(
@@ -276,12 +256,18 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
     getView(): ICanvas
     {
-        return this.pixi.view;
+        return this.pixi.canvas;
     }
 
-    getOrientation(): OrientationValue
+    getPreferredOrientations(): PreferredOrientations
     {
-        return this.orientation;
+        return this.preferredOrientations;
+    }
+
+    setPreferredOrientations(preferredOrientations: PreferredOrientations): void
+    {
+        this.preferredOrientations = preferredOrientations;
+        this.redraw();
     }
 
     /**
@@ -291,12 +277,6 @@ export default class GameView extends TypedEmitter<GameViewEvents>
     getCurrentOrientation(): number
     {
         return (this.currentOrientation + 12) % 12;
-    }
-
-    setOrientation(orientation: OrientationValue): void
-    {
-        this.orientation = orientation;
-        this.redraw();
     }
 
     /**
@@ -375,63 +355,100 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.emit('endedAndWinAnimationOver');
     }
 
+    /**
+     * Returns swap coords from a game, and optionnal undone moves, assuming player swapped.
+     *
+     * While undoing swap move, we cannot get swap coords
+     * because at this time, game has already undone moves, and has no first move.
+     * So we assume next move of undoneMoves was first move.
+     */
+    private getSwapCoordsFromGameOrUndoneMoves(undoneMoves: null | Move[] = null): { swapped: Coords, mirror: Coords }
+    {
+        const swapCoords = this.game.getSwapCoords(false);
+
+        if (swapCoords) {
+            return swapCoords;
+        }
+
+        if (null === undoneMoves) {
+            throw new Error('Cannot get swap coords from game: no swap move, or has been undone but no undoneMoves provided.');
+        }
+
+        let firstMove: null | Move = null;
+
+        for (let i = 0; i < undoneMoves.length; ++i) {
+            if ('swap-pieces' === undoneMoves[i].getSpecialMoveType()) {
+                firstMove = undoneMoves[i + 1] ?? null;
+            }
+        }
+
+        if (!firstMove) {
+            throw new Error('Expected to have at least swap coords from game, or first move before swap move in undoneMoves');
+        }
+
+        return {
+            mirror: firstMove.cloneMirror(),
+            swapped: firstMove,
+        };
+    }
+
     private listenModel(): void
     {
         this.highlightSidesFromGame();
 
         this.game.on('played', (move, moveIndex, byPlayerIndex) => {
-            this.resetHighlightedHexes();
 
-            this.hexes[move.row][move.col].setPlayer(byPlayerIndex);
-
-            switch (this.game.getMovesHistory().length) {
-                case 1:
-                    if (this.game.canSwapNow()) {
-                        this.showSwapable(move);
-                    } else {
-                        this.hexes[move.row][move.col].setHighlighted();
-                    }
-
+            // Update board cells
+            switch (move.getSpecialMoveType()) {
+                case undefined:
+                    this.hexes[move.row][move.col].setPlayer(byPlayerIndex);
                     break;
 
-                case 2: {
-                    const swapMove = this.game.isLastMoveSwapPieces();
-
-                    if (null === swapMove) {
-                        this.hexes[move.row][move.col].setHighlighted();
-                        break;
-                    }
-
-                    const { swapped, mirror } = swapMove;
+                case 'swap-pieces': {
+                    const { swapped, mirror } = this.getSwapCoordsFromGameOrUndoneMoves();
 
                     this.hexes[swapped.row][swapped.col].setPlayer(null);
                     this.hexes[mirror.row][mirror.col].setPlayer(byPlayerIndex);
-                    this.showSwaped(mirror);
-
                     break;
                 }
-
-                default:
-                    this.hexes[move.row][move.col].setHighlighted();
             }
 
+            this.removePreviewMove();
+            this.highlightLastMove();
             this.highlightSidesFromGame();
+        });
+
+        this.game.on('undo', async undoneMoves => {
+            this.removePreviewMove(undoneMoves);
+
+            for (let i = 0; i < undoneMoves.length; ++i) {
+                const move = undoneMoves[i];
+
+                if (i > 0) {
+                    // If two moves are undone, slightly wait between these two moves removal
+                    await new Promise(r => setTimeout(r, 150));
+                }
+
+                switch (move.getSpecialMoveType()) {
+                    case undefined:
+                        this.hexes[move.row][move.col].setPlayer(null);
+                        break;
+
+                    case 'swap-pieces': {
+                        const { mirror, swapped } = this.getSwapCoordsFromGameOrUndoneMoves(undoneMoves);
+
+                        this.hexes[mirror.row][mirror.col].setPlayer(null);
+                        this.hexes[swapped.row][swapped.col].setPlayer(0);
+                        break;
+                    }
+                }
+
+                this.highlightLastMove(undoneMoves[i + 1] ?? null);
+            }
         });
 
         this.game.on('ended', () => this.endedCallback());
         this.game.on('canceled', () => this.endedCallback());
-    }
-
-    resetHighlightedHexes(): void
-    {
-        this.game.getMovesHistory().forEach((move) => {
-            this.hexes[move.row][move.col].setHighlighted(false);
-        });
-
-        if (this.game.getAllowSwap()) {
-            this.showSwapable(false);
-            this.showSwaped(false);
-        }
     }
 
     private async animateWinningPath(): Promise<void>
@@ -454,11 +471,20 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
     private createAndAddHexes(): void
     {
-        this.hexes = Array(this.game.getSize()).fill(null).map(() => Array(this.game.getSize()));
+        const { playerSettings } = usePlayerSettingsStore();
+        const size = this.game.getSize();
 
-        for (let row = 0; row < this.game.getSize(); ++row) {
-            for (let col = 0; col < this.game.getSize(); ++col) {
-                const hex = new Hex(this.game.getBoard().getCell(row, col));
+        const boardShadingPattern = playerSettings?.boardShadingPattern ?? null;
+        const boardShadingPatternIntensity = playerSettings?.boardShadingPatternIntensity ?? 0.5;
+        const boardShadingPatternOption = playerSettings?.boardShadingPatternOption ?? null;
+        const show44dots = playerSettings?.show44dots ?? false;
+        const shadingPattern = createShadingPattern(boardShadingPattern, size, boardShadingPatternOption);
+
+        this.hexes = Array(size).fill(null).map(() => Array(size));
+
+        for (let row = 0; row < size; ++row) {
+            for (let col = 0; col < size; ++col) {
+                const hex = new Hex(this.game.getBoard().getCell(row, col), shadingPattern.calc(row, col) * boardShadingPatternIntensity);
 
                 hex.position = Hex.coords(row, col);
 
@@ -467,36 +493,61 @@ export default class GameView extends TypedEmitter<GameViewEvents>
                 this.gameContainer.addChild(hex);
 
                 hex.on('pointertap', () => {
-                    this.emit('hexClicked', new Move(row, col));
+                    this.emit('hexClicked', { row, col });
                 });
             }
+        }
+
+        if (show44dots && size > 9) {
+            this.hexes[3][3].showDot();
+            this.hexes[3][size - 4].showDot();
+            this.hexes[size - 4][3].showDot();
+            this.hexes[size - 4][size - 4].showDot();
         }
 
         this.highlightLastMove();
     }
 
-    private highlightLastMove(): void
+    /**
+     * Shows a dot on game current last played move.
+     * For swap move, shows arrows if possible to swap opponent move,
+     * or show a "S" to show that last move was swapped.
+     *
+     * @param {Move} move Override last move to highlight this move instead.
+     */
+    private highlightLastMove(move: null | Move = null): void
     {
-        const lastMove = this.game.getLastMove();
+        if (null !== this.lastSimpleMoveHighlighted) {
+            const { row, col } = this.lastSimpleMoveHighlighted;
+            this.hexes[row][col].setHighlighted(false);
+            this.lastSimpleMoveHighlighted = null;
+        }
+
+        this.showSwapable(false);
+        this.showSwaped(false);
+
+        const lastMove = move ?? this.game.getLastMove();
 
         if (null === lastMove) {
             return;
         }
 
-        if (this.game.getAllowSwap()) {
-            if (1 === this.game.getMovesHistory().length) {
-                this.showSwapable(lastMove);
-                return;
-            }
-
-            const swapPieces = this.game.isLastMoveSwapPieces();
-
-            if (null !== swapPieces) {
-                this.showSwaped(swapPieces.mirror);
-                return;
-            }
+        if (this.game.canSwapNow()) {
+            this.showSwapable(lastMove);
+            return;
         }
 
+        if ('pass' === lastMove.getSpecialMoveType()) {
+            return;
+        }
+
+        if ('swap-pieces' === lastMove.getSpecialMoveType()) {
+            const { mirror } = this.getSwapCoordsFromGameOrUndoneMoves();
+            this.showSwaped(mirror);
+            return;
+        }
+
+        this.lastSimpleMoveHighlighted = lastMove;
         this.hexes[lastMove.row][lastMove.col].setHighlighted();
     }
 
@@ -506,12 +557,12 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.sidesGraphics = [new Graphics(), new Graphics()];
 
         let g: Graphics;
-        const to = (a: IPointData, b: IPointData = { x: 0, y: 0 }) => g.lineTo(a.x + b.x, a.y + b.y);
-        const m = (a: IPointData, b: IPointData = { x: 0, y: 0 }) => g.moveTo(a.x + b.x, a.y + b.y);
+        const to = (a: PointData, b: PointData = { x: 0, y: 0 }) => g.lineTo(a.x + b.x, a.y + b.y);
+        const m = (a: PointData, b: PointData = { x: 0, y: 0 }) => g.moveTo(a.x + b.x, a.y + b.y);
 
         // Set sides colors
-        this.sidesGraphics[0].lineStyle(Hex.RADIUS * 0.6, GameView.currentTheme.colorA);
-        this.sidesGraphics[1].lineStyle(Hex.RADIUS * 0.6, GameView.currentTheme.colorB);
+        this.sidesGraphics[0].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: GameView.currentTheme.colorA });
+        this.sidesGraphics[1].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: GameView.currentTheme.colorB });
 
         // From a1 to i1 (red)
         g = this.sidesGraphics[0];
@@ -522,6 +573,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             to(Hex.coords(0, i), Hex.cornerCoords(0));
         }
 
+        g.stroke();
+
         // From i1 to i9 (blue)
         g = this.sidesGraphics[1];
         m(Hex.coords(0, this.game.getSize() - 1), Hex.cornerCoords(0));
@@ -530,6 +583,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             to(Hex.coords(i, this.game.getSize() - 1), Hex.cornerCoords(1));
             to(Hex.coords(i, this.game.getSize() - 1), Hex.cornerCoords(2));
         }
+
+        g.stroke();
 
         // From i9 to a9 (red)
         g = this.sidesGraphics[0];
@@ -540,6 +595,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             to(Hex.coords(this.game.getSize() - 1, this.game.getSize() - i - 1), Hex.cornerCoords(4));
         }
 
+        g.stroke();
+
         // From a9 to a1 (blue)
         g = this.sidesGraphics[1];
         m(Hex.coords(this.game.getSize() - 1, 0), Hex.cornerCoords(4));
@@ -548,6 +605,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             if (i) to(Hex.coords(this.game.getSize() - i - 1, 0), Hex.cornerCoords(4));
             to(Hex.coords(this.game.getSize() - i - 1, 0), Hex.cornerCoords(5));
         }
+
+        g.stroke();
 
         // Add both sides into a single container
         const sidesContainer = new Container();
@@ -585,7 +644,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         });
 
         const createText = (string: string, x: number, y: number): Text => {
-            const text = new Text(string, coordsTextStyle);
+            const text = new Text({ text: string, style: coordsTextStyle });
 
             text.resolution = window.devicePixelRatio * 2;
             text.rotation = -this.gameContainer.rotation;
@@ -645,8 +704,6 @@ export default class GameView extends TypedEmitter<GameViewEvents>
      */
     private fixedRotation(): number
     {
-        const { ceil } = Math;
-
         return -ceil(((this.gameContainer.rotation / PI_6) + 1) / 2) * PI_3 + PI_6;
     }
 
@@ -696,26 +753,65 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         return this;
     }
 
-    previewMove(coords: Coords, playerIndex: PlayerIndex): this
+    getPreviewedMove(): null | { move: Move, playerIndex: PlayerIndex }
     {
-        this.removePreviewMove();
+        return this.previewedMove;
+    }
 
-        this.hexes[coords.row][coords.col].previewMove(playerIndex);
-        this.previewedMove = { coords, playerIndex };
+    previewMove(move: Move, playerIndex: PlayerIndex): this
+    {
+        if (null !== this.previewedMove && !this.previewedMove.move.sameAs(move)) {
+            this.removePreviewMove();
+        }
+
+        this.previewedMove = { move, playerIndex };
+
+        switch (move.getSpecialMoveType()) {
+            case undefined:
+                this.hexes[move.row][move.col].previewMove(playerIndex);
+                break;
+
+            case 'swap-pieces': {
+                const swapCoords = this.game.getSwapCoords(false);
+
+                if (null === swapCoords) {
+                    throw new Error('Unexpected null swapCoords');
+                }
+
+                const { mirror, swapped } = swapCoords;
+
+                this.hexes[swapped.row][swapped.col].previewMove(1 - playerIndex as PlayerIndex);
+                this.hexes[mirror.row][mirror.col].previewMove(playerIndex);
+            }
+        }
 
         return this;
     }
 
-    removePreviewMove(): this
+    /**
+     * @param undoneMoves In case of a move undo, pass them here so we can which was coords of undone moves to remove preview
+     */
+    removePreviewMove(undoneMoves: null | Move[] = null): this
     {
         if (null === this.previewedMove) {
             return this;
         }
 
-        const { row, col } = this.previewedMove.coords;
-
-        this.hexes[row][col].removePreviewMove();
+        const { move } = this.previewedMove;
         this.previewedMove = null;
+
+        switch (move.getSpecialMoveType()) {
+            case undefined:
+                this.hexes[move.row][move.col].removePreviewMove();
+                break;
+
+            case 'swap-pieces': {
+                const { mirror, swapped } = this.getSwapCoordsFromGameOrUndoneMoves(undoneMoves);
+
+                this.hexes[swapped.row][swapped.col].removePreviewMove();
+                this.hexes[mirror.row][mirror.col].removePreviewMove();
+            }
+        }
 
         return this;
     }
@@ -726,5 +822,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
         this.destroyResizeObserver();
         this.unwatchThemeSwitchedListener();
+        this.unwatchSettingsChangedListener();
+        this.unwatchLocalSettingsChangedListener();
     }
 }

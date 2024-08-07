@@ -1,30 +1,29 @@
 <script setup lang="ts">
-import { useOverlayMeta } from 'unoverlay-vue';
+import { usePrograms } from '@overlastic/vue';
 import { PropType, ref } from 'vue';
-import { GameOptionsData, sanitizeGameOptions } from '@shared/app/GameOptions';
-import { defaultGameOptions } from '@shared/app/GameOptions';
+import HostedGameOptions from '../../../../shared/app/models/HostedGameOptions';
 import { BIconCaretDownFill, BIconCaretRight } from 'bootstrap-icons-vue';
 import AppBoardsize from './create-game/AppBoardsize.vue';
 import AppPlayFirstOrSecond from './create-game/AppPlayFirstOrSecond.vue';
 import AppSwapRule from './create-game/AppSwapRule.vue';
 
-const { visible, confirm, cancel } = useOverlayMeta();
+const { visible, resolve, reject } = usePrograms();
 
 const props = defineProps({
     gameOptions: {
-        type: Object as PropType<Partial<GameOptionsData>>,
+        type: Object as PropType<Partial<HostedGameOptions>>,
         required: true,
     },
 });
 
 export type Create1vOfflineAIOverlayInput = typeof props;
 
-const gameOptions = ref<GameOptionsData>({ ...defaultGameOptions, ...props.gameOptions });
+const gameOptions = ref<HostedGameOptions>({ ...new HostedGameOptions(), ...props.gameOptions });
 
 const showSecondaryOptions = ref(false);
 
-const submitForm = (gameOptions: GameOptionsData): void => {
-    confirm(sanitizeGameOptions(gameOptions));
+const submitForm = (gameOptions: HostedGameOptions): void => {
+    resolve(gameOptions);
 };
 </script>
 
@@ -34,12 +33,16 @@ const submitForm = (gameOptions: GameOptionsData): void => {
             <div class="modal-dialog">
                 <form class="modal-content" @submit="e => { e.preventDefault(); submitForm(gameOptions); }">
                     <div class="modal-header">
-                        <h5 class="modal-title">Game options</h5>
-                        <button type="button" class="btn-close" @click="cancel()"></button>
+                        <h5 class="modal-title">{{ $t('1vAI_offline.title') }}</h5>
+                        <button type="button" class="btn-close" @click="reject()"></button>
                     </div>
                     <div class="modal-body">
+                        <p>
+                            <small>{{ $t('offline_game_explain') }}</small>
+                        </p>
+
                         <div class="mb-3">
-                            <AppBoardsize :game-options="gameOptions" />
+                            <AppBoardsize :gameOptions="gameOptions" />
                         </div>
 
                         <button
@@ -47,26 +50,26 @@ const submitForm = (gameOptions: GameOptionsData): void => {
                             @click="showSecondaryOptions = false"
                             type="button"
                             class="btn btn-primary btn-sm mt-3"
-                        ><BIconCaretDownFill /> Less options</button>
+                        ><BIconCaretDownFill /> {{ $t('create_game.less_options') }}</button>
                         <button
                             v-else
                             @click="showSecondaryOptions = true"
                             type="button"
                             class="btn btn-outline-primary btn-sm mt-3"
-                        ><BIconCaretRight /> More options</button>
+                        ><BIconCaretRight /> {{ $t('create_game.more_options') }}</button>
                     </div>
                     <div v-if="showSecondaryOptions" class="modal-body border-top">
                         <div class="mb-3">
-                            <AppPlayFirstOrSecond :game-options="gameOptions" />
+                            <AppPlayFirstOrSecond :gameOptions="gameOptions" />
                         </div>
 
                         <div class="mb-3">
-                            <AppSwapRule :game-options="gameOptions" />
+                            <AppSwapRule :gameOptions="gameOptions" />
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" @click="cancel()">Cancel</button>
-                        <button type="submit" class="btn btn-success">Play vs AI offline</button>
+                        <button type="button" class="btn btn-outline-secondary" @click="reject()">{{ $t('cancel') }}</button>
+                        <button type="submit" class="btn btn-success">{{ $t('1vAI_offline.create') }}</button>
                     </div>
                 </form>
             </div>

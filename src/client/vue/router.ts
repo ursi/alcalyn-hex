@@ -63,7 +63,37 @@ const routes: RouteRecordRaw[] = [
                 path: 'resources/hex-links',
                 component: () => import('@client/vue/pages/content/PageHexLinks.vue'),
             },
+            {
+                name: 'contribute',
+                path: 'contribute',
+                component: () => import('@client/vue/pages/content/PageContribute.vue'),
+            },
+            {
+                name: 'contributors',
+                path: 'contributors',
+                component: () => import('@client/vue/pages/content/PageContributors.vue'),
+            },
+            {
+                name: 'spawn-worker',
+                path: 'spawn-worker',
+                component: () => import('@client/vue/pages/content/PageSpawnWorker.vue'),
+            },
+            {
+                name: 'analysis-details',
+                path: 'hex-game-analysis',
+                component: () => import('@client/vue/pages/content/PageAnalysisDetails.vue'),
+            },
+            {
+                name: 'privacy',
+                path: 'privacy',
+                component: () => import('@client/vue/pages/content/PagePrivacyPolicy.vue'),
+            },
         ],
+    },
+    {
+        name: 'rescue',
+        path: '/rescue',
+        component: () => import('@client/vue/pages/PageRescue.vue'),
     },
     {
         name: 'not-found',

@@ -1,15 +1,18 @@
-import { Game, Move, PlayerIndex } from '@shared/game-engine';
-import { HostedGameData, HostedGameState } from '@shared/app/Types';
-import Player from '../shared/app/models/Player';
+import { Game, Move as GameMove, PlayerIndex } from '@shared/game-engine';
+import HostedGame from '../shared/app/models/HostedGame';
+import { HostedGameState } from '@shared/app/Types';
+import { Player, HostedGameOptions, ChatMessage, HostedGameToPlayer, Move, Rating } from '../shared/app/models';
 import { Outcome } from '@shared/game-engine/Types';
 import { GameTimeData } from '@shared/time-control/TimeControl';
 import { TypedEmitter } from 'tiny-typed-emitter';
 import { Socket } from 'socket.io-client';
 import { HexClientToServerEvents, HexServerToClientEvents } from '../shared/app/HexSocketEvents';
-import { apiPostCancel, apiPostResign } from './apiClient';
+import { apiPostAnswerUndo, apiPostAskUndo, apiPostCancel, apiPostResign } from './apiClient';
 import TimeControlType from '@shared/time-control/TimeControlType';
-import { GameOptionsData } from '@shared/app/GameOptions';
-import ChatMessage from '../shared/app/models/ChatMessage';
+import { notifier } from './services/notifications';
+import useServerDateStore from './stores/serverDateStore';
+import { timeValueToMilliseconds } from '../shared/time-control/TimeValue';
+import { toEngineMove } from '../shared/app/models/Move';
 
 type HostedGameClientEvents = {
     started: () => void;
@@ -17,14 +20,14 @@ type HostedGameClientEvents = {
 };
 
 /**
- * Contains info to display in the games list on lobby (HostedGameData).
+ * Contains info to display in the games list on lobby (HostedGame).
  * If needed, can also download full game data and start listening to game events (Game).
  */
 export default class HostedGameClient extends TypedEmitter<HostedGameClientEvents>
 {
     /**
      * Null if game data not fully loaded yet, i.e for lobby list display.
-     * Game data can still be retrieved in hostedGameData.
+     * Game data can still be retrieved in hostedGame.
      */
     private game: null | Game = null;
 
@@ -34,43 +37,45 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
      */
     private readMessages: number;
 
+    private lowTimeNotificationThread: null | NodeJS.Timeout = null;
+
     constructor(
-        private hostedGameData: HostedGameData,
+        private hostedGame: HostedGame,
         private socket: Socket<HexServerToClientEvents, HexClientToServerEvents>,
     ) {
         super();
 
-        this.readMessages = hostedGameData.chatMessages.length;
+        this.readMessages = hostedGame.chatMessages.length;
     }
 
     getState(): HostedGameState
     {
-        return this.hostedGameData.state;
+        return this.hostedGame.state;
     }
 
     getPlayerIndex(player: Player): number
     {
-        return this.hostedGameData.players.findIndex(p => p.publicId === player.publicId);
+        return this.hostedGame.hostedGameToPlayers.findIndex(p => p.player.publicId === player.publicId);
     }
 
     loadGame(): Game
     {
-        return this.game ?? this.loadGameFromData(this.hostedGameData);
+        return this.game ?? this.loadGameFromData(this.hostedGame);
     }
 
-    private loadGameFromData(hostedGameData: HostedGameData): Game
+    private loadGameFromData(hostedGame: HostedGame): Game
     {
-        const { gameData } = hostedGameData;
+        const { gameData } = hostedGame;
 
         /**
          * No game server side, create an empty one to show client side
          */
         if (null === gameData) {
-            this.game = new Game(hostedGameData.gameOptions.boardsize);
+            this.game = new Game(hostedGame.gameOptions.boardsize);
 
             // Cancel here in case game has been canceled before started
-            if ('canceled' === hostedGameData.state) {
-                this.game.cancel();
+            if ('canceled' === hostedGame.state) {
+                this.game.cancel(hostedGame.createdAt);
             }
 
             return this.game;
@@ -81,25 +86,21 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         this.game.setAllowSwap(gameData.allowSwap);
         this.game.setStartedAt(gameData.startedAt);
 
-        this.onServerGameStarted(hostedGameData);
+        this.doStartGame(hostedGame);
 
         // Replay game and fill history
         for (const move of gameData.movesHistory) {
-            this.game.move(new Move(move.row, move.col), this.game.getCurrentPlayerIndex());
+            this.game.move(GameMove.fromData(move), this.game.getCurrentPlayerIndex());
         }
 
         // Cancel game if canceled
-        if ('canceled' === hostedGameData.state && !this.game.isEnded()) {
-            this.game.cancel();
+        if ('canceled' === hostedGame.state && !this.game.isEnded()) {
+            this.game.cancel(gameData.endedAt ?? gameData.lastMoveAt ?? new Date());
         }
 
         // Set a winner if not yet set because timeout or resignation
         if (null !== gameData.winner && !this.game.isEnded()) {
-            this.game.declareWinner(gameData.winner, gameData.outcome);
-        }
-
-        if (this.game.isEnded() && null !== gameData.endedAt) {
-            this.game.setEndedAt(gameData.endedAt);
+            this.game.declareWinner(gameData.winner, gameData.outcome, gameData.endedAt ?? new Date());
         }
 
         return this.game;
@@ -107,49 +108,49 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     getId(): string
     {
-        return this.hostedGameData.id;
+        return this.hostedGame.publicId;
     }
 
     getPlayers(): Player[]
     {
-        return this.hostedGameData.players;
+        return this.hostedGame.hostedGameToPlayers.map(hostedGameToPlayer => hostedGameToPlayer.player);
     }
 
     getPlayer(position: number): null | Player
     {
-        return this.hostedGameData.players[position] ?? null;
+        return this.hostedGame.hostedGameToPlayers[position].player ?? null;
     }
 
     getWinnerPlayer(): null | Player
     {
-        if (this.hostedGameData.gameData?.winner !== 0 && this.hostedGameData.gameData?.winner !== 1) {
+        if (this.hostedGame.gameData?.winner !== 0 && this.hostedGame.gameData?.winner !== 1) {
             return null;
         }
 
-        return this.hostedGameData.players[this.hostedGameData.gameData.winner];
+        return this.hostedGame.hostedGameToPlayers[this.hostedGame.gameData.winner].player;
     }
 
     getStrictWinnerPlayer(): Player
     {
-        if (this.hostedGameData.gameData?.winner !== 0 && this.hostedGameData.gameData?.winner !== 1) {
+        if (this.hostedGame.gameData?.winner !== 0 && this.hostedGame.gameData?.winner !== 1) {
             throw new Error('getStrictWinnerPlayer(): No winner');
         }
 
-        return this.hostedGameData.players[this.hostedGameData.gameData.winner];
+        return this.hostedGame.hostedGameToPlayers[this.hostedGame.gameData.winner].player;
     }
 
     getLoserPlayer(): null | Player
     {
-        if (this.hostedGameData.gameData?.winner !== 0 && this.hostedGameData.gameData?.winner !== 1) {
+        if (this.hostedGame.gameData?.winner !== 0 && this.hostedGame.gameData?.winner !== 1) {
             return null;
         }
 
-        return this.hostedGameData.players[1 - this.hostedGameData.gameData.winner];
+        return this.hostedGame.hostedGameToPlayers[1 - this.hostedGame.gameData.winner].player;
     }
 
     hasPlayer(player: Player): boolean
     {
-        return this.hostedGameData.players.some(p => p.publicId === player.publicId);
+        return this.hostedGame.hostedGameToPlayers.some(p => p.player.publicId === player.publicId);
     }
 
     /**
@@ -158,38 +159,48 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
      */
     getOtherPlayer(player: Player): null | Player
     {
-        if (2 !== this.hostedGameData.players.length) {
+        if (2 !== this.hostedGame.hostedGameToPlayers.length) {
             return null;
         }
 
-        if (this.hostedGameData.players[0].publicId === player.publicId) {
-            return this.hostedGameData.players[1];
+        if (this.hostedGame.hostedGameToPlayers[0].player.publicId === player.publicId) {
+            return this.hostedGame.hostedGameToPlayers[1].player;
         }
 
-        return this.hostedGameData.players[0];
+        return this.hostedGame.hostedGameToPlayers[0].player;
     }
 
-    getHostedGameData(): HostedGameData
+    getHostedGame(): HostedGame
     {
-        return this.hostedGameData;
+        return this.hostedGame;
     }
 
-    getGameOptions(): GameOptionsData
+    getGameOptions(): HostedGameOptions
     {
-        return this.hostedGameData.gameOptions;
+        return this.hostedGame.gameOptions;
     }
 
     getChatMessages(): ChatMessage[]
     {
-        return this.hostedGameData.chatMessages;
+        return this.hostedGame.chatMessages;
+    }
+
+    isRanked(): boolean
+    {
+        return this.hostedGame.gameOptions.ranked;
+    }
+
+    getRatings(): Rating[]
+    {
+        return this.hostedGame.ratings ?? [];
     }
 
     /**
-     * Update data and game from HostedGameData
+     * Update data and game from HostedGame
      */
-    updateFromHostedGameData(hostedGameData: HostedGameData): void
+    updateFromHostedGame(hostedGame: HostedGame): void
     {
-        this.hostedGameData = hostedGameData;
+        this.hostedGame = hostedGame;
     }
 
     getGame(): Game
@@ -203,7 +214,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     canResign(): boolean
     {
-        return this.hostedGameData.state === 'playing';
+        return this.hostedGame.state === 'playing';
     }
 
     canCancel(): boolean
@@ -213,9 +224,21 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         }
 
         return !this.game.isCanceled()
-            && this.hostedGameData.state !== 'ended'
+            && this.hostedGame.state !== 'ended'
             && this.getGame().getMovesHistory().length < 2
         ;
+    }
+
+    canRematch(): boolean
+    {
+        return (this.hostedGame.state === 'ended'
+            || this.hostedGame.state === 'canceled')
+            && this.hostedGame.rematch == null;
+    }
+
+    getRematchGameId(): string | null
+    {
+        return this.hostedGame.rematch?.publicId ?? null;
     }
 
     canJoin(player: null | Player): boolean
@@ -225,7 +248,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         }
 
         // Cannot join if game has been canceled
-        if ('canceled' === this.hostedGameData.state) {
+        if ('canceled' === this.hostedGame.state) {
             return false;
         }
 
@@ -235,7 +258,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         }
 
         // Cannot join if game is full
-        if (this.hostedGameData.players.length >= 2) {
+        if (this.hostedGame.hostedGameToPlayers.length >= 2) {
             return false;
         }
 
@@ -260,15 +283,39 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     async sendMove(move: Move): Promise<true | string>
     {
+        // No need to send client playedAt date, server won't trust it
+        const moveWithoutDate = new Move();
+
+        moveWithoutDate.row = move.row;
+        moveWithoutDate.col = move.col;
+        moveWithoutDate.specialMoveType = move.specialMoveType;
+
         return new Promise((resolve, reject) => {
-            this.socket.emit('move', this.getId(), move.toData(), answer => {
+            this.socket.emit('move', this.getId(), moveWithoutDate, answer => {
                 if (true === answer) {
                     resolve(answer);
                 }
 
                 reject(answer);
             });
+
+            notifier.emit('move', this.hostedGame, moveWithoutDate);
         });
+    }
+
+    async sendAskUndo(): Promise<string | true>
+    {
+        return apiPostAskUndo(this.getId());
+    }
+
+    async sendAnswerUndo(accept: boolean): Promise<string | true>
+    {
+        return apiPostAnswerUndo(this.getId(), accept);
+    }
+
+    getUndoRequest(): number | null
+    {
+        return this.hostedGame.undoRequest;
     }
 
     async sendResign(): Promise<string | true>
@@ -283,14 +330,19 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     onServerPlayerJoined(player: Player): void
     {
-        this.hostedGameData.players.push(player);
+        const hostedGameToPlayer = new HostedGameToPlayer();
+
+        hostedGameToPlayer.hostedGame = this.hostedGame;
+        hostedGameToPlayer.player = player;
+
+        this.hostedGame.hostedGameToPlayers.push(hostedGameToPlayer);
     }
 
-    onServerGameStarted(hostedGameData: HostedGameData): void
+    private doStartGame(hostedGame: HostedGame): void
     {
-        this.updateFromHostedGameData(hostedGameData);
+        this.updateFromHostedGame(hostedGame);
 
-        const { gameData } = hostedGameData;
+        const { gameData } = hostedGame;
 
         if (null === gameData) {
             throw new Error('game started but no game data');
@@ -301,41 +353,93 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
             return;
         }
 
-        this.hostedGameData.players = hostedGameData.players;
-
-        this.emit('started');
+        this.hostedGame.hostedGameToPlayers = hostedGame.hostedGameToPlayers;
     }
 
-    onServerGameCanceled(): void
+    onServerGameStarted(hostedGame: HostedGame): void
     {
-        this.hostedGameData.state = 'canceled';
+        this.doStartGame(hostedGame);
 
-        if (this.hostedGameData.gameData) {
-            this.hostedGameData.gameData.endedAt = new Date();
+        this.emit('started');
+
+        notifier.emit('gameStart', hostedGame);
+    }
+
+    onServerGameCanceled(date: Date): void
+    {
+        this.hostedGame.state = 'canceled';
+
+        if (this.hostedGame.gameData) {
+            this.hostedGame.gameData.endedAt = date;
         }
 
-        if (null !== this.game) {
-            this.game.cancel();
+        if (null !== this.game && !this.game.isCanceled()) {
+            this.game.cancel(date);
         }
     }
 
     getTimeControlOptions(): TimeControlType
     {
-        return this.hostedGameData.gameOptions.timeControl;
+        return this.hostedGame.gameOptions.timeControl;
     }
 
     getTimeControlValues(): GameTimeData
     {
-        return this.hostedGameData.timeControl;
+        return this.hostedGame.timeControl;
     }
 
     onServerUpdateTimeControl(gameTimeData: GameTimeData): void
     {
-        Object.assign(this.hostedGameData.timeControl, gameTimeData);
+        Object.assign(this.hostedGame.timeControl, gameTimeData);
+
+        this.notifyWhenLowTime(gameTimeData);
+    }
+
+    private resetLowTimeNotificationThread(): void
+    {
+        if (null !== this.lowTimeNotificationThread) {
+            clearTimeout(this.lowTimeNotificationThread);
+            this.lowTimeNotificationThread = null;
+        }
+    }
+
+    private notifyWhenLowTime(gameTimeData: GameTimeData): void
+    {
+        this.resetLowTimeNotificationThread();
+
+        const { players, currentPlayer } = gameTimeData;
+        const { totalRemainingTime } = players[currentPlayer];
+
+        if (!(totalRemainingTime instanceof Date)) {
+            return;
+        }
+
+        const serverDate = useServerDateStore().newDate();
+
+        this.lowTimeNotificationThread = setTimeout(() => {
+            notifier.emit('gameTimeControlWarning', this.hostedGame);
+        }, timeValueToMilliseconds(totalRemainingTime, serverDate) - 10000);
+    }
+
+    onServerRematchAvailable(rematchId: string): void
+    {
+        const hostedGame = new HostedGame();
+
+        hostedGame.publicId = rematchId;
+
+        this.hostedGame.rematch = hostedGame;
     }
 
     onServerGameMoved(move: Move, moveIndex: number, byPlayerIndex: PlayerIndex): void
     {
+        const { gameData } = this.hostedGame;
+
+        if (null !== gameData) {
+            gameData.movesHistory.push(move);
+            gameData.currentPlayerIndex = 1 - byPlayerIndex as PlayerIndex;
+            gameData.lastMoveAt = move.playedAt;
+        }
+
         // Do nothing if game not loaded
         if (null === this.game) {
             return;
@@ -346,17 +450,42 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
             return;
         }
 
-        this.game.move(move, byPlayerIndex);
+        this.game.move(toEngineMove(move), byPlayerIndex);
+
+        notifier.emit('move', this.hostedGame, move);
     }
 
-    onServerGameEnded(winner: PlayerIndex, outcome: Outcome): void
+    onServerAskUndo(byPlayerIndex: PlayerIndex): void
     {
-        this.hostedGameData.state = 'ended';
+        this.hostedGame.undoRequest = byPlayerIndex;
+    }
 
-        if (this.hostedGameData.gameData) {
-            this.hostedGameData.gameData.winner = winner;
-            this.hostedGameData.gameData.outcome = outcome;
-            this.hostedGameData.gameData.endedAt = new Date();
+    onServerAnswerUndo(accept: boolean): void
+    {
+        if (accept && this.game) {
+            if (null === this.hostedGame.undoRequest) {
+                throw new Error('undo answered but no undo request');
+            }
+
+            this.game.playerUndo(this.hostedGame.undoRequest as PlayerIndex);
+        }
+
+        this.hostedGame.undoRequest = null;
+    }
+
+    onServerCancelUndo(): void
+    {
+        this.hostedGame.undoRequest = null;
+    }
+
+    onServerGameEnded(winner: PlayerIndex, outcome: Outcome, date: Date): void
+    {
+        this.hostedGame.state = 'ended';
+
+        if (this.hostedGame.gameData) {
+            this.hostedGame.gameData.winner = winner;
+            this.hostedGame.gameData.outcome = outcome;
+            this.hostedGame.gameData.endedAt = date;
         }
 
         // Do nothing if game not loaded
@@ -364,18 +493,41 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
             return;
         }
 
+        notifier.emit('gameEnd', this.hostedGame);
+
         // If game is not already ended locally by server response anticipation
         if (this.game.isEnded()) {
             return;
         }
 
-        this.game.declareWinner(winner, outcome);
+        this.game.declareWinner(winner, outcome, date);
+    }
+
+    onRatingsUpdated(ratings: Rating[]): void
+    {
+        // Add rating change of this game
+        this.hostedGame.ratings = ratings;
+
+        // Update player current rating to update view
+        ratings.forEach(rating => {
+            const player = this.hostedGame
+                .hostedGameToPlayers
+                .find(hostedGameToPlayer => hostedGameToPlayer.player.publicId === rating.player.publicId)
+                ?.player
+            ;
+
+            if (!player) {
+                return;
+            }
+
+            player.currentRating = rating;
+        });
     }
 
     async sendChatMessage(content: string): Promise<string | true>
     {
         return new Promise((resolve, reject) => {
-            this.socket.emit('sendChat', this.hostedGameData.id, content, (answer: true | string) => {
+            this.socket.emit('sendChat', this.hostedGame.publicId, content, (answer: true | string) => {
                 if (true === answer) {
                     resolve(answer);
                 }
@@ -387,13 +539,14 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     onChatMessage(chatMessage: ChatMessage): void
     {
-        this.hostedGameData.chatMessages.push(chatMessage);
+        this.hostedGame.chatMessages.push(chatMessage);
         this.emit('chatMessagePosted');
+        notifier.emit('chatMessage', this.hostedGame, chatMessage);
     }
 
     getUnreadMessages(): number
     {
-        return this.readMessages - this.hostedGameData.chatMessages.length;
+        return this.readMessages - this.hostedGame.chatMessages.length;
     }
 
     getReadMessages(): number
@@ -403,6 +556,6 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     markAllMessagesRead(): void
     {
-        this.readMessages = this.hostedGameData.chatMessages.length;
+        this.readMessages = this.hostedGame.chatMessages.length;
     }
 }

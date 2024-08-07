@@ -1,5 +1,5 @@
 {
-    "id": "4b720b93-1100-46e2-8255-24d419fa268b",
+    "publicId": "4b720b93-1100-46e2-8255-24d419fa268b",
     "host": {
         "pseudo": "aa",
         "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
@@ -8,14 +8,16 @@
         "slug": "aa",
         "createdAt": "2024-01-24T16:33:29.586Z"
     },
-    "players": [
+    "hostedGameToPlayers": [
         {
-            "pseudo": "aa",
-            "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
-            "isGuest": false,
-            "isBot": false,
-            "slug": "aa",
-            "createdAt": "2024-01-24T16:33:29.586Z"
+            "player": {
+                "pseudo": "aa",
+                "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
+                "isGuest": false,
+                "isBot": false,
+                "slug": "aa",
+                "createdAt": "2024-01-24T16:33:29.586Z"
+            }
         }
     ],
     "timeControl": {
@@ -23,10 +25,10 @@
         "currentPlayer": 0,
         "players": [
             {
-                "totalRemainingTime": 600
+                "totalRemainingTime": 600000
             },
             {
-                "totalRemainingTime": 600
+                "totalRemainingTime": 600000
             }
         ]
     },
@@ -40,32 +42,14 @@
         "timeControl": {
             "type": "fischer",
             "options": {
-                "initialSeconds": 600,
-                "incrementSeconds": 5,
-                "maxSeconds": 600
+                "initialTime": 600000,
+                "timeIncrement": 5000,
+                "maxTime": 600000
             }
         }
     },
     "gameData": null,
     "chatMessages": [],
     "state": "created",
-    "createdAt": "2024-01-25T10:38:24.523Z",
-    "__meta": {
-        "values": {
-            "host.createdAt": [
-                "Date"
-            ],
-            "players.0.createdAt": [
-                "Date"
-            ],
-            "createdAt": [
-                "Date"
-            ]
-        },
-        "referentialEqualities": {
-            "host": [
-                "players.0"
-            ]
-        }
-    }
+    "createdAt": "2024-01-25T10:38:24.523Z"
 }

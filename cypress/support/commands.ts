@@ -35,3 +35,89 @@
 //     }
 //   }
 // }
+
+// eslint-disable-next-line @typescript-eslint/no-namespace
+declare namespace Cypress {
+    interface Chainable {
+        /**
+         * Open AI game creation popin, select determinist bot.
+         * Pass submit=false to keep game options popin open.
+         */
+        createAIGameWithRandom(submit?: boolean): Chainable<unknown>;
+
+        /**
+         * To use after createAIGameWithRandom(false),
+         * submit game options and create game.
+         */
+        submitAIGame(): Chainable<unknown>;
+
+        /**
+         * Click on screen to play a move.
+         * x and y are coords of pixel on screen.
+         */
+        play(x: number, y: number): Chainable<unknown>;
+
+        /**
+         * When on game page, open game sidebar.
+         */
+        openGameSidebar(): Chainable<unknown>;
+
+        /**
+         * When on game page, close game sidebar.
+         */
+        closeGameSidebar(): Chainable<unknown>;
+    }
+}
+
+Cypress.Commands.add('createAIGameWithRandom', (submit = true) => {
+    cy.contains('Play vs AI').click();
+
+    cy
+        .contains('h5', 'Play vs AI')
+        .closest('.modal-content')
+        .contains('button', 'random')
+        .click()
+    ;
+
+    cy
+        .contains('h5', 'Play vs AI')
+        .closest('.modal-content')
+        .contains('Determinist')
+        .click()
+    ;
+
+    if (!submit) {
+        return;
+    }
+
+    cy.submitAIGame();
+});
+
+Cypress.Commands.add('submitAIGame', () => {
+    cy
+        .contains('h5', 'Play vs AI')
+        .closest('.modal-content')
+        .contains('button', 'Play vs AI')
+        .click()
+    ;
+});
+
+Cypress.Commands.add('play', (x, y) => {
+    cy.get('canvas');
+    cy.wait(50);
+    cy.get('body').click(x, y);
+});
+
+Cypress.Commands.add('openGameSidebar', () => {
+    cy
+        .get('[aria-label="Open game sidebar and chat"]')
+        .click()
+    ;
+});
+
+Cypress.Commands.add('closeGameSidebar', () => {
+    cy
+        .contains('.block-close', 'Close')
+        .click()
+    ;
+});

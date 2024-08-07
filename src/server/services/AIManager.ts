@@ -1,31 +1,28 @@
-import { GameOptionsData } from '@shared/app/GameOptions';
-import prisma from './prisma';
+import HostedGameOptions from '../../shared/app/models/HostedGameOptions';
 import Player from '../../shared/app/models/Player';
 import { Move, calcRandomMove } from '../../shared/game-engine';
 import Container from 'typedi';
 import RemoteApiPlayer from './RemoteApiPlayer';
 import logger from './logger';
-import { select as playerSelect } from '../persistance/PlayerPersister';
-import { plainToInstance } from 'class-transformer';
-import HostedGame from '../HostedGame';
+import HostedGameServer from '../HostedGameServer';
 import HexAiApiClient from './HexAiApiClient';
+import { AppDataSource } from '../data-source';
 
 export class FindAIError extends Error {}
 
 const findPlayerWithAIConfig = async (publicId: string): Promise<null | Player> => {
-    return plainToInstance(Player, await prisma.player.findUnique({
+    return await AppDataSource.getRepository(Player).findOne({
         where: {
             publicId,
         },
-        select: {
-            ...playerSelect,
+        relations: {
             aiConfig: true,
         },
-    }));
+    });
 };
 
-export const findAIOpponent = async (gameOptions: GameOptionsData): Promise<null | Player> => {
-    const { publicId } = gameOptions.opponent;
+export const findAIOpponent = async (gameOptions: HostedGameOptions): Promise<null | Player> => {
+    const publicId = gameOptions.opponentPublicId;
 
     if (!publicId) {
         throw new FindAIError('ai player publicId must be specified');
@@ -61,7 +58,7 @@ export const findAIOpponent = async (gameOptions: GameOptionsData): Promise<null
     return player;
 };
 
-const validateConfigRandom = (config: unknown): config is { determinist: boolean } => {
+export const validateConfigRandom = (config: unknown): config is { determinist: boolean } => {
     return 'object' === typeof config
         && null !== config
         && 'determinist' in config
@@ -69,7 +66,29 @@ const validateConfigRandom = (config: unknown): config is { determinist: boolean
     ;
 };
 
-export const makeAIPlayerMove = async (player: Player, hostedGame: HostedGame): Promise<null | Move> => {
+const waitTimeBeforeRandomMove = (() => {
+    const { RANDOM_BOT_WAIT_BEFORE_PLAY } = process.env;
+
+    if (!RANDOM_BOT_WAIT_BEFORE_PLAY) {
+        return () => 0;
+    }
+
+    const matches = RANDOM_BOT_WAIT_BEFORE_PLAY.match(/\d+/g);
+
+    if (!matches) {
+        return () => 0;
+    }
+
+    if (2 === matches.length) {
+        const [min, max] = matches.map(s => parseInt(s, 10));
+
+        return () => min + Math.random() * (max - min);
+    }
+
+    return () => parseInt(matches[0], 10);
+})();
+
+export const makeAIPlayerMove = async (player: Player, hostedGameServer: HostedGameServer): Promise<null | Move> => {
     const { isBot } = player;
     let { aiConfig } = player;
 
@@ -91,10 +110,10 @@ export const makeAIPlayerMove = async (player: Player, hostedGame: HostedGame): 
     }
 
     if (aiConfig.isRemote) {
-        return Container.get(RemoteApiPlayer).makeMove(aiConfig.engine, hostedGame, aiConfig.config);
+        return Container.get(RemoteApiPlayer).makeMove(aiConfig.engine, hostedGameServer, aiConfig.config);
     }
 
-    const game = hostedGame.getGame();
+    const game = hostedGameServer.getGame();
 
     if (null === game) {
         throw new Error('makeAIPlayerMove() called with a HostedGame without game');
@@ -106,7 +125,7 @@ export const makeAIPlayerMove = async (player: Player, hostedGame: HostedGame): 
                 throw new Error('Invalid config for aiConfig');
             }
 
-            return await calcRandomMove(game, 0, aiConfig.config.determinist);
+            return await calcRandomMove(game, waitTimeBeforeRandomMove(), aiConfig.config.determinist);
     }
 
     logger.error(`No local AI play for bot with slug = "${player.slug}"`);

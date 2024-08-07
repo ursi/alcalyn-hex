@@ -2,10 +2,9 @@
 
 Play Hex online.
 
-Currently hosted here: <https://playhex.org/>
+Currently hosted here: <https://playhex.org>
 
-![Game screenshot](assets/images/screenshots/game.png)
-
+[![PlayHex](assets/images/screenshots/game.png)](https://playhex.org)
 
 ## Install
 
@@ -13,8 +12,9 @@ Requires:
 
 - node >= 18.18.2
 - yarn
+- mysql or postgres
 
-Create and `.env` file with at least your database access. Example:
+Create an `.env` file with at least a database access. Example:
 
 ``` .env
 DATABASE_URL="mysql://root:root@localhost:3306/hex"
@@ -26,11 +26,8 @@ Then run these commands:
 # Install dependencies
 yarn install
 
-# Generate prisma classes
-yarn prisma generate
-
 # Create database schema
-yarn prisma db push
+yarn db:sync
 
 # Start application
 yarn serve
@@ -39,6 +36,71 @@ yarn serve
 Wait javascript to be bundled, then the application is available at:
 
 <http://localhost:3000/>
+
+### Play with AI
+
+For development you can use random and determinist random bots.
+
+Enable them with:
+
+``` bash
+yarn hex create-random-bots
+```
+
+Determinist random bot will always plays same games
+if you play same moves in same order.
+This is useful to reproduce things.
+
+If you need to work with real AI (Katahex, Mohex), see:
+
+<https://github.com/alcalyn/hex-ai-distributed>
+
+You can install it locally, and with Docker you don't need to compile any ai engine.
+
+Once installed, add to your `.env` file:
+
+```
+HEX_AI_API=http://localhost:8088
+```
+
+And enable ai players in database with:
+
+``` bash
+yarn hex create-katahex-bots
+yarn hex create-mohex-bots
+```
+
+## Translate PlayHex
+
+PlayHex uses [i18next](https://www.i18next.com/)
+and [i18next-vue](https://github.com/i18next/i18next-vue)
+to translate user interface.
+
+Here are all available translations, just click the following image to help translating or add a new language:
+
+[![Translation status](https://hosted.weblate.org/widget/playhex/multi-auto.svg)](https://hosted.weblate.org/engage/playhex/)
+
+You can contribute to translations without any coding,
+thanks to [Weblate](https://weblate.org).
+
+## Admin endpoints
+
+Some API endpoints exists for admin tasks (i.e persist all memory games into database manually).
+
+To use them, you must add in your `.env`:
+
+``` .env
+ADMIN_PASSWORD=your-password
+```
+
+Then you can now call admin endpoints by setting this same password as bearer token, curl example:
+
+``` bash
+curl --location --request POST 'http://localhost:3000/api/admin/persist-games' \
+    --header 'Authorization: Bearer your-password'
+```
+
+See available admin endpoints in postman collection, in "Admin" folder.
 
 ## Test
 
@@ -53,7 +115,21 @@ yarn test:e2e
 yarn cypress open
 ```
 
-And see [manual tests](./manual-tests.md) to check also.
+**Warning**: For e2e/cypress tests, there is some configuration requirements:
+
+- Random bots must exists in database, if not, run:
+
+``` bash
+yarn hex create-random-bots
+```
+
+- Random bots must play instantaneously, which is the default. If you changed this, make sure this env var is zero again:
+
+```
+RANDOM_BOT_WAIT_BEFORE_PLAY=0
+```
+
+- A functional test in auth.cy.ts needs at least one game in database to run fully.
 
 ### Optimize js size
 
@@ -66,4 +142,12 @@ Compare two json files with: <https://happy-water-0887b0b1e.azurestaticapps.net>
 
 ## License
 
-This library is under [AGPL-3.0 license](LICENSE).
+This project is under [AGPL-3.0 license](LICENSE).
+
+### Exceptions
+
+Files under these folders are under another license:
+
+| Folder | License | Author |
+| ------ | ------- | ------ |
+| `assets/sounds/lisp/` | `CC BY-NC-SA 4.0` | [EdinburghCollective](http://lichess.org/@/EdinburghCollective) |

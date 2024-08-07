@@ -1,11 +1,12 @@
-import { Move, PlayerIndex } from '@shared/game-engine';
-import { MoveData, Outcome } from '@shared/game-engine/Types';
+import { PlayerIndex } from '@shared/game-engine';
+import { Outcome } from '@shared/game-engine/Types';
+import { Move } from '../../shared/app/models';
 import { defineStore } from 'pinia';
 import HostedGameClient from '@client/HostedGameClient';
-import { HostedGameData } from '@shared/app/Types';
+import HostedGame from '../../shared/app/models/HostedGame';
 import Player from '../../shared/app/models/Player';
-import { apiPostGame, getEndedGames, getGame, getGames } from '@client/apiClient';
-import { GameOptionsData } from '@shared/app/GameOptions';
+import { apiPostGame, apiPostRematch, getEndedGames, getGame, getGames } from '@client/apiClient';
+import HostedGameOptions from '../../shared/app/models/HostedGameOptions';
 import { GameTimeData } from '@shared/time-control/TimeControl';
 import useSocketStore from './socketStore';
 import { ref } from 'vue';
@@ -26,31 +27,37 @@ const useLobbyStore = defineStore('lobbyStore', () => {
      */
     const hostedGameClients = ref<{ [key: string]: HostedGameClient }>({});
 
-    const createGame = async (gameOptions?: GameOptionsData): Promise<HostedGameClient> => {
-        const hostedGameData = await apiPostGame(gameOptions);
+    const createGame = async (gameOptions?: HostedGameOptions): Promise<HostedGameClient> => {
+        const hostedGame = await apiPostGame(gameOptions);
 
-        hostedGameClients.value[hostedGameData.id] = new HostedGameClient(hostedGameData, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+        hostedGameClients.value[hostedGame.publicId] = new HostedGameClient(hostedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
 
-        return hostedGameClients.value[hostedGameData.id];
+        return hostedGameClients.value[hostedGame.publicId];
+    };
+
+    const rematchGame = async (gameId: string): Promise<HostedGameClient> => {
+        const hostedGameData = await apiPostRematch(gameId);
+        hostedGameClients.value[hostedGameData.publicId] = new HostedGameClient(hostedGameData, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+        return hostedGameClients.value[hostedGameData.publicId];
     };
 
     /**
      * Promise of list of games loaded on app start.
      * Can be reused.
      */
-    const initialGamesPromise: Promise<HostedGameData[]> = getGames();
+    const initialGamesPromise: Promise<HostedGame[]> = getGames();
 
     /**
      * Load and update all games from server.
      */
     const updateGames = async (): Promise<void> => {
-        const apiGames: HostedGameData[] = await initialGamesPromise;
+        const apiGames: HostedGame[] = await initialGamesPromise;
 
-        apiGames.forEach(hostedGameData => {
-            if (hostedGameClients.value[hostedGameData.id]) {
-                hostedGameClients.value[hostedGameData.id].updateFromHostedGameData(hostedGameData);
+        apiGames.forEach(hostedGame => {
+            if (hostedGameClients.value[hostedGame.publicId]) {
+                hostedGameClients.value[hostedGame.publicId].updateFromHostedGame(hostedGame);
             } else {
-                hostedGameClients.value[hostedGameData.id] = new HostedGameClient(hostedGameData, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+                hostedGameClients.value[hostedGame.publicId] = new HostedGameClient(hostedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
             }
         });
     };
@@ -63,15 +70,18 @@ const useLobbyStore = defineStore('lobbyStore', () => {
             return hostedGameClients.value[gameId];
         }
 
-        const hostedGameData: null | HostedGameData = await getGame(gameId);
+        const hostedGame: null | HostedGame = await getGame(gameId);
 
-        if (null === hostedGameData) {
+        if (null === hostedGame) {
             return null;
         }
 
-        return hostedGameClients.value[gameId] = new HostedGameClient(hostedGameData, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+        return hostedGameClients.value[gameId] = new HostedGameClient(hostedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
     };
 
+    /**
+     * Load more finished games, excluding bot games.
+     */
     const loadMoreEndedGames = async (): Promise<void> => {
         let oldestHostedGameClient: HostedGameClient | undefined = undefined;
 
@@ -85,8 +95,8 @@ const useLobbyStore = defineStore('lobbyStore', () => {
                 continue;
             }
 
-            const oldestDate = oldestHostedGameClient.getHostedGameData().gameData?.endedAt?.getTime();
-            const currentDate = hostedGameClients.value[publicId].getHostedGameData().gameData?.endedAt?.getTime();
+            const oldestDate = oldestHostedGameClient.getHostedGame().gameData?.endedAt?.getTime();
+            const currentDate = hostedGameClients.value[publicId].getHostedGame().gameData?.endedAt?.getTime();
 
             if (undefined === oldestDate || undefined === currentDate) {
                 continue;
@@ -100,13 +110,13 @@ const useLobbyStore = defineStore('lobbyStore', () => {
         const moreEndedGames = await getEndedGames(20, oldestHostedGameClient?.getId() ?? null);
 
         moreEndedGames.forEach(endedGame => {
-            hostedGameClients.value[endedGame.id] = new HostedGameClient(endedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+            hostedGameClients.value[endedGame.publicId] = new HostedGameClient(endedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
         });
     };
 
     const listenSocket = (): void => {
-        socket.on('gameCreated', (hostedGameData: HostedGameData) => {
-            hostedGameClients.value[hostedGameData.id] = new HostedGameClient(hostedGameData, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
+        socket.on('gameCreated', (hostedGame: HostedGame) => {
+            hostedGameClients.value[hostedGame.publicId] = new HostedGameClient(hostedGame, socket as Socket<HexServerToClientEvents, HexClientToServerEvents>);
         });
 
         socket.on('gameJoined', (gameId: string, player: Player) => {
@@ -115,21 +125,39 @@ const useLobbyStore = defineStore('lobbyStore', () => {
             }
         });
 
-        socket.on('gameStarted', (hostedGameData: HostedGameData) => {
-            if (hostedGameClients.value[hostedGameData.id]) {
-                hostedGameClients.value[hostedGameData.id].onServerGameStarted(hostedGameData);
+        socket.on('gameStarted', (hostedGame: HostedGame) => {
+            if (hostedGameClients.value[hostedGame.publicId]) {
+                hostedGameClients.value[hostedGame.publicId].onServerGameStarted(hostedGame);
             }
         });
 
-        socket.on('gameCanceled', (gameId: string) => {
+        socket.on('gameCanceled', (gameId, { date }) => {
             if (hostedGameClients.value[gameId]) {
-                hostedGameClients.value[gameId].onServerGameCanceled();
+                hostedGameClients.value[gameId].onServerGameCanceled(date);
             }
         });
 
-        socket.on('moved', (gameId: string, move: MoveData, moveIndex: number, byPlayerIndex: PlayerIndex) => {
+        socket.on('moved', (gameId: string, move: Move, moveIndex: number, byPlayerIndex: PlayerIndex) => {
             if (hostedGameClients.value[gameId]) {
-                hostedGameClients.value[gameId].onServerGameMoved(new Move(move.row, move.col), moveIndex, byPlayerIndex);
+                hostedGameClients.value[gameId].onServerGameMoved(move, moveIndex, byPlayerIndex);
+            }
+        });
+
+        socket.on('askUndo', (gameId: string, byPlayerIndex: PlayerIndex) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onServerAskUndo(byPlayerIndex);
+            }
+        });
+
+        socket.on('answerUndo', (gameId: string, accept) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onServerAnswerUndo(accept);
+            }
+        });
+
+        socket.on('cancelUndo', (gameId: string) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onServerCancelUndo();
             }
         });
 
@@ -139,15 +167,27 @@ const useLobbyStore = defineStore('lobbyStore', () => {
             }
         });
 
-        socket.on('ended', (gameId: string, winner: PlayerIndex, outcome: Outcome) => {
+        socket.on('rematchAvailable', (gameId: string, rematchId: string) => {
             if (hostedGameClients.value[gameId]) {
-                hostedGameClients.value[gameId].onServerGameEnded(winner, outcome);
+                hostedGameClients.value[gameId].onServerRematchAvailable(rematchId);
             }
         });
 
-        socket.on('chat', (chatMessage: ChatMessage) => {
-            if (hostedGameClients.value[chatMessage.gameId]) {
-                hostedGameClients.value[chatMessage.gameId].onChatMessage(chatMessage);
+        socket.on('ended', (gameId: string, winner: PlayerIndex, outcome: Outcome, { date }) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onServerGameEnded(winner, outcome, date);
+            }
+        });
+
+        socket.on('ratingsUpdated', (gameId, ratings) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onRatingsUpdated(ratings);
+            }
+        });
+
+        socket.on('chat', (gameId: string, chatMessage: ChatMessage) => {
+            if (hostedGameClients.value[gameId]) {
+                hostedGameClients.value[gameId].onChatMessage(chatMessage);
             }
         });
     };
@@ -165,6 +205,7 @@ const useLobbyStore = defineStore('lobbyStore', () => {
         hostedGameClients,
         initialGamesPromise,
         createGame,
+        rematchGame,
         updateGames,
         retrieveHostedGameClient,
         loadMoreEndedGames,

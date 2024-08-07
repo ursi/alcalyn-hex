@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { useOverlayMeta } from 'unoverlay-vue';
+import { t } from 'i18next';
+import { usePrograms } from '@overlastic/vue';
 
-const { visible, confirm, cancel } = useOverlayMeta();
+const { visible, resolve, reject } = usePrograms();
 
 const props = defineProps({
     title: {
         type: String,
-        default: 'Confirmation',
+        default: t('confirm_overlay.confirmation'),
     },
     message: {
         type: String,
-        default: 'Are you sure?',
+        default: t('confirm_overlay.are_you_sure?'),
     },
     confirmLabel: {
         type: String,
-        default: 'Yes',
+        default: t('yes'),
     },
     confirmClass: {
         type: String,
@@ -22,7 +23,7 @@ const props = defineProps({
     },
     cancelLabel: {
         type: String,
-        default: 'No',
+        default: t('no'),
     },
     cancelClass: {
         type: String,
@@ -33,19 +34,19 @@ const props = defineProps({
 
 <template>
     <div v-if="visible">
-        <div class="modal d-block" @click="cancel()">
+        <div class="modal d-block" @click="reject()">
             <div class="modal-dialog" @click="e => e.stopPropagation()">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">{{ props.title }}</h5>
-                        <button type="button" class="btn-close" @click="cancel()"></button>
+                        <button type="button" class="btn-close" @click="reject()"></button>
                     </div>
                     <div class="modal-body">
                         <p>{{ props.message }}</p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn" :class="cancelClass" @click="cancel()">{{ props.cancelLabel }}</button>
-                        <button type="button" class="btn" :class="confirmClass" @click="confirm()">{{ props.confirmLabel }}</button>
+                        <button type="button" class="btn" :class="cancelClass" @click="reject()">{{ props.cancelLabel }}</button>
+                        <button type="button" class="btn" :class="confirmClass" @click="resolve()">{{ props.confirmLabel }}</button>
                     </div>
                 </div>
             </div>

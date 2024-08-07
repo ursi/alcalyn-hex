@@ -1,5 +1,6 @@
+import { t } from 'i18next';
 import TimeControlType from '../time-control/TimeControlType';
-import { GameOptionsData } from './GameOptions';
+import HostedGameOptions from './models/HostedGameOptions';
 
 /**
  * Returns average seconds per move
@@ -18,20 +19,14 @@ export const calcAverageSecondsPerMove = (timeControlType: TimeControlType, boar
     const { type, options } = timeControlType;
 
     switch (type) {
-        case 'simple':
-            return options.secondsPerMove;
-
-        case 'absolute':
-            return options.secondsPerPlayer / averageMoves;
-
         case 'fischer':
-            return options.initialSeconds / averageMoves
-                + (options.incrementSeconds ?? 0);
+            return (options.initialTime / 1000) / averageMoves
+                + (options.timeIncrement ?? 0) / 1000;
 
         case 'byoyomi':
-            return options.initialSeconds / averageMoves
+            return (options.initialTime / 1000) / averageMoves
                 + (options.periodsCount > 0
-                    ? (options.periodsCount - 1) * options.periodSeconds / averageMoves + options.periodSeconds
+                    ? (options.periodsCount - 1) * (options.periodTime / 1000) / averageMoves + options.periodTime / 1000
                     : 0
                 )
             ;
@@ -39,13 +34,13 @@ export const calcAverageSecondsPerMove = (timeControlType: TimeControlType, boar
 };
 
 
-type TimeControlCadencyName = 'blitz' | 'normal' | 'correspondance';
+export type TimeControlCadencyName = 'blitz' | 'normal' | 'correspondence';
 
 /**
- * Naive function that guess if a game is a blitz or correspondance
+ * Naive function that guess if a game is a blitz or correspondence
  * given its time control and board size.
  */
-export const timeControlToCadencyName = (gameOptions: GameOptionsData): TimeControlCadencyName => {
+export const timeControlToCadencyName = (gameOptions: HostedGameOptions): TimeControlCadencyName => {
     const averageSecondsPerMove = calcAverageSecondsPerMove(
         gameOptions.timeControl,
         gameOptions.boardsize,
@@ -57,7 +52,7 @@ export const timeControlToCadencyName = (gameOptions: GameOptionsData): TimeCont
 
     // wet finger technique
     if (averageSecondsPerMove > 3600 * 9) {
-        return 'correspondance';
+        return 'correspondence';
     }
 
     return 'normal';
@@ -67,30 +62,30 @@ export const timeControlToCadencyName = (gameOptions: GameOptionsData): TimeCont
  * Show seconds like time. For in game elapsing time.
  * "5:02", "1h06", "1d 5h"
  */
-export const secondsToTime = (seconds: number): string => {
+export const msToTime = (ms: number): string => {
     const { floor } = Math;
 
     const parts = [];
 
-    parts.push(floor(seconds / 86400));
-    seconds -= parts[0] * 86400;
-    parts.push(floor(seconds / 3600));
-    seconds -= parts[1] * 3600;
-    parts.push(floor(seconds / 60));
-    seconds -= parts[2] * 60;
-    parts.push(floor(seconds));
+    parts.push(floor(ms / 86400000));
+    ms -= parts[0] * 86400000;
+    parts.push(floor(ms / 3600000));
+    ms -= parts[1] * 3600000;
+    parts.push(floor(ms / 60000));
+    ms -= parts[2] * 60000;
+    parts.push(floor(ms / 1000));
 
     if (parts[0] > 0) {
         return parts[1] > 0
-            ? `${parts[0]}d ${parts[1]}h`
-            : `${parts[0]}d`
+            ? `${parts[0]}${t('short_time_unit.day')} ${parts[1]}${t('short_time_unit.hour')}`
+            : `${parts[0]}${t('short_time_unit.day')}`
         ;
     }
 
     if (parts[1] > 0) {
         return parts[2] > 0
-            ? `${parts[1]}h${String(parts[2]).padStart(2, '0')}`
-            : `${parts[1]}h`
+            ? `${parts[1]}${t('short_time_unit.hour')}${String(parts[2]).padStart(2, '0')}`
+            : `${parts[1]}${t('short_time_unit.hour')}`
         ;
     }
 
@@ -101,8 +96,8 @@ export const secondsToTime = (seconds: number): string => {
  * Show seconds like duration. For lobby or time increments.
  * "5min", "1h", "1d12h"
  */
-export const secondsToDuration = (seconds: number, precision = 2): string => {
-    if (seconds <= 0) {
+export const msToDuration = (ms: number, precision = 2): string => {
+    if (ms <= 0) {
         return '0';
     }
 
@@ -110,30 +105,30 @@ export const secondsToDuration = (seconds: number, precision = 2): string => {
 
     const parts = [];
 
-    parts.push(floor(seconds / 86400));
-    seconds -= parts[0] * 86400;
-    parts.push(floor(seconds / 3600));
-    seconds -= parts[1] * 3600;
-    parts.push(floor(seconds / 60));
-    seconds -= parts[2] * 60;
-    parts.push(floor(seconds));
+    parts.push(floor(ms / 86400000));
+    ms -= parts[0] * 86400000;
+    parts.push(floor(ms / 3600000));
+    ms -= parts[1] * 3600000;
+    parts.push(floor(ms / 60000));
+    ms -= parts[2] * 60000;
+    parts.push(floor(ms / 1000));
 
     const tokens = [];
 
     if (parts[0] > 0) {
-        tokens.push(parts[0] + 'd');
+        tokens.push(parts[0] + t('short_time_unit.day'));
     }
 
     if (parts[1] > 0) {
-        tokens.push(parts[1] + 'h');
+        tokens.push(parts[1] + t('short_time_unit.hour'));
     }
 
     if (parts[2] > 0) {
-        tokens.push(parts[2] + 'min');
+        tokens.push(parts[2] + t('short_time_unit.minute'));
     }
 
     if (parts[3] > 0) {
-        tokens.push(parts[3] + 's');
+        tokens.push(parts[3] + t('short_time_unit.second'));
     }
 
     return tokens.slice(0, precision).join('');
@@ -142,31 +137,23 @@ export const secondsToDuration = (seconds: number, precision = 2): string => {
 export const timeControlToString = (timeControl: TimeControlType): string => {
     switch (timeControl.type) {
         case 'fischer': {
-            let string = secondsToDuration(timeControl.options.initialSeconds);
+            let string = msToDuration(timeControl.options.initialTime);
 
-            if (timeControl.options.incrementSeconds) {
-                string += ' + ' + secondsToDuration(timeControl.options.incrementSeconds);
+            if (timeControl.options.timeIncrement) {
+                string += ' + ' + msToDuration(timeControl.options.timeIncrement);
             }
 
             return string;
         }
 
         case 'byoyomi': {
-            let string = secondsToDuration(timeControl.options.initialSeconds);
+            let string = msToDuration(timeControl.options.initialTime);
 
-            if (timeControl.options.periodSeconds && timeControl.options.periodsCount) {
-                string += ` + ${timeControl.options.periodsCount} × ${secondsToDuration(timeControl.options.periodSeconds)}`;
+            if (timeControl.options.periodTime && timeControl.options.periodsCount) {
+                string += ` + ${timeControl.options.periodsCount} × ${msToDuration(timeControl.options.periodTime)}`;
             }
 
             return string;
-        }
-
-        case 'absolute': {
-            return secondsToDuration(timeControl.options.secondsPerPlayer) + ' / player';
-        }
-
-        case 'simple': {
-            return secondsToDuration(timeControl.options.secondsPerMove) + ' / move';
         }
     }
 };

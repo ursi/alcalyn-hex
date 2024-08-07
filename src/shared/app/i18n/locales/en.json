@@ -1,0 +1,266 @@
+{
+    "lobby_title": "Lobby",
+    "lobby": {
+        "no_waiting_games": "No games available right now. Create a new one!",
+        "watch_current_games": "Watch current games",
+        "join_a_game": "Join a game",
+        "no_playing_games": "There are no games in progress right now."
+    },
+    "game": {
+        "opponent": "Opponent",
+        "host": "Host",
+        "size": "Size",
+        "board": "Game board",
+        "board_size": "Board size",
+        "time_control": "Time control",
+        "rules": "Rules",
+        "created": "Created",
+        "accept": "Accept",
+        "red": "Red",
+        "blue": "Blue",
+        "started": "Started",
+        "played": "Played",
+        "finished": "Finished",
+        "review": "Review",
+        "won": "Won",
+        "outcome": "Outcome",
+        "lost": "Lost",
+        "playing": "Playing",
+        "watch": "Watch"
+    },
+    "game_rules": {
+        "normal": "normal",
+        "host_plays_first": "host plays first",
+        "host_plays_second": "host plays second",
+        "no_swap": "no swap"
+    },
+    "create_game": {
+        "custom_size": "Custom",
+        "less_options": "Less options",
+        "more_options": "More options"
+    },
+    "player_settings": {
+        "title": "Settings"
+    },
+    "background_theme": {
+        "title": "Theme",
+        "dark": "Dark",
+        "light": "Light"
+    },
+    "time_control": {
+        "custom": "Custom",
+        "use": "Use {{type}}",
+        "byo_yomi": "Byo-Yomi",
+        "fischer": "Fischer",
+        "initial_time": "Initial time",
+        "time_increment": "Time increment",
+        "periods": "Periods",
+        "periods_time": "Periods time",
+        "fast": "Fast",
+        "normal": "Normal",
+        "long": "Long"
+    },
+    "i_play": {
+        "title": "I play",
+        "random": "Random",
+        "first": "First",
+        "second": "Second"
+    },
+    "swap_rule": "Swap rule",
+    "allow_swap_pieces": "Allow swap pieces",
+    "toggle_coords": "Toggle coords",
+    "toggle_coords_short": "Coords",
+    "share_game": "Share game",
+    "copied!": "Copied!",
+    "not_copied": "Failed to copy, use right click or long tap",
+    "2dots": "{{s}}:",
+    "game_created_by_player_time_ago": "Game created by {player}, {timeAgo}.",
+    "game_was_created_by_player_time_ago": "Game was created by {player}, {timeAgo}.",
+    "log_out": "Log out",
+    "log_in": "Log in",
+    "sign_up": "Sign up",
+    "feedback": "Feedback",
+    "hex_links": "Hex links",
+    "project_under_development": "Project under development",
+    "last_change": "Last change: {{date}}",
+    "privacy_policy": "Privacy policy",
+    "license_agpl": "License AGPL-3.0",
+    "create_account": "Create an account",
+    "already_have_account_login_instead": "Already have an account? {login} instead",
+    "already_have_account_login_instead_link_label": "Log in",
+    "no_account_sign_up_instead": "No account? {signUp} instead",
+    "no_account_sign_up_instead_link_label": "Sign up",
+    "add_your_language": "Your language is missing? {link}!",
+    "add_your_language_link": "Add it with Weblate",
+    "show_coords_by_default": "Show coordinates by default",
+    "username": "Username",
+    "password": "Password",
+    "account_created_on": "Account created on {{date}}",
+    "player_current_games": "Current games",
+    "player_game_history": "Game history",
+    "waiting": "waiting…",
+    "initializing_game": "Initializing game…",
+    "game_finished_overlay": {
+        "title": "Game finished"
+    },
+    "game_has_been_canceled": "Game has been canceled.",
+    "waiting_for_an_opponent": "Waiting for an opponent…",
+    "confirm_overlay": {
+        "confirmation": "Confirmation",
+        "are_you_sure?": "Are you sure?"
+    },
+    "workers": {
+        "slow_worker": "No fast worker is online right now. Only limited AI are available.",
+        "no_worker": "No worker can compute moves right now. Only random bots are available.",
+        "see_how_to_spawn_a_worker": "See how to compute AI moves for PlayHex from my computer"
+    },
+    "game_analyze": {
+        "analyze_by_ai": "Game analyze by AI",
+        "analyze_game": "Analyze game",
+        "requested": "Analyze requested…",
+        "errored": "Analyze errored!",
+        "best_move": "best move",
+        "best": "best:",
+        "how_it_works": "How it works"
+    },
+    "try_again": "Try again",
+    "yes": "Yes",
+    "no": "No",
+    "language": "Language",
+    "cancel": "Cancel",
+    "pass": "Pass",
+    "close": "Close",
+    "ranked": "Ranked",
+    "rating": "Rating: {{rating}}",
+    "new_game": "New game",
+    "players": "Players",
+    "player": "player",
+    "load_more": "Load more",
+    "no_such_player": "Looks like there is no such player.",
+    "n_online_players": "Online ({{n}})",
+    "guest": "Guest",
+    "finished_games": "Finished games",
+    "1v1_ranked": {
+        "title": "1v1",
+        "create": "Create 1v1"
+    },
+    "1v1_friendly": {
+        "title": "Custom 1v1",
+        "create": "Create custom 1v1"
+    },
+    "1vAI_ranked": {
+        "title": "Ranked vs AI",
+        "create": "Play ranked vs AI"
+    },
+    "1vAI_friendly": {
+        "title": "Play vs AI",
+        "create": "Play vs AI"
+    },
+    "1vAI_offline": {
+        "title": "Offline AI",
+        "create": "Play vs offline AI"
+    },
+    "offline_game_explain": "Offline game only runs on your device, PlayHex server is not called. So you can play when no internet.",
+    "loading_game": "Loading game…",
+    "tournament": "Tournament",
+    "now!": "Now!",
+    "register_on_challonge": "Register on Challonge",
+    "see_progression_on_challonge": "See progression on Challonge",
+    "move": "move",
+    "chat": "Chat",
+    "system": "System",
+    "chat_message_placeholder": "Message…",
+    "unread_messages": "unread messages",
+    "send_chat_message": "Send",
+    "n_characters_one": "{{count}} character",
+    "n_characters_other": "{{count}} characters",
+    "landscape": "Landscape",
+    "portrait": "Portrait",
+    "resign": "Resign",
+    "auto": "Auto",
+    "board_orientation": {
+        "title": "Orientation",
+        "description": "Your preferred board orientation for portrait and landscape screen orientation.",
+        "flat": "Flat",
+        "flat_2": "Flat 2",
+        "diamond": "Diamond"
+    },
+    "shading_patterns": {
+        "title": "Shading pattern",
+        "visibility": "Shading pattern visibility",
+        "types": {
+            "null": "None",
+            "tricolor_checkerboard": "Tri-color checkerboard",
+            "concentrical_rings": "Concentrical rings (Hexworld)",
+            "height_5_lines": "Height 5 lines",
+            "single_ring": "Single ring",
+            "custom": "Custom"
+        },
+        "custom_expression": "Custom expression",
+        "help_custom": "Math expression for custom shading pattern.<br>Expression must return a number between 0 (no shading) to 1 (fully shaded) for a given cell (row, col). You can use i.e 0.5 for tri color shading patterns. Returning <code>true</code> or <code>false</code> also works same as returning <code>1</code> or <code>0</code>.<br>Variables are availables:<br>- <code>row</code> and <code>col</code> (shortcuts: <code>r</code> and <code>c</code>) for row and col number, starts from 0.<br>- <code>size</code> (or <code>s</code>) for board size.<br>- <code>distToSide</code> distance of current cell to its nearest side.<br>See list of available operators at https://github.com/silentmatt/expr-eval?tab=readme-ov-file#expression-syntax<br>Examples:<br>- Concentrical rings: <code>distToSide % 2</code><br>- Tri color checkerboard: <code>((size + row - col) % 3) / 2</code><br>- Disk with radius sqrt(20): <code>o = size / 2; (row - o) ^ 2 + (col - o) ^ 2 < 20</code><br>Open javascript console (F12) to see errors while executing your expression."
+    },
+    "show_44_dots": "Show dots on 4-4 cells",
+    "preview": "Preview",
+    "change_password": "Change password",
+    "old_password": "Old password",
+    "new_password": "New password",
+    "confirm_new_password": "Confirm new password",
+    "update_password": "Update password",
+    "contribute": "Contribute",
+    "contributors": "Contributors",
+    "player_made_a_move": "{{player}} made a move",
+    "game_with_player_has_started": "Game with {{player}} has started",
+    "last_move": "Last move",
+    "undo": {
+        "undo_move": "Undo",
+        "accept": "Accept undo",
+        "reject": "Reject"
+    },
+    "ping": {
+        "ping_ms": "Ping: {{ms}}ms",
+        "date_shift_ms": "Date shift compensation: {{ms}}ms"
+    },
+    "game_candency": {
+        "blitz": "Blitz",
+        "normal": "Normal",
+        "correspondence": "Correspondence"
+    },
+    "confirm_move": {
+        "title": "Confirm move",
+        "button_label": "Confirm move",
+        "button_label_short": "Confirm",
+        "send_immediately": "Send immediately",
+        "ask_confirmation": "Ask confirmation",
+        "description": "To prevent misclicks, you can require confirmation before submitting a move."
+    },
+    "rematch": {
+        "label": "Rematch",
+        "accept": "Accept rematch",
+        "view": "View rematch"
+    },
+    "short_time_unit": {
+        "day": "d",
+        "hour": "h",
+        "minute": "min",
+        "second": "s"
+    },
+    "outcome": {
+        "win": "win",
+        "loss": "loss",
+        "resign": "resign",
+        "forfeit": "forfeit",
+        "time": "timeout"
+    },
+    "player_won_by": {
+        "default": "{player} won the game!",
+        "time": "{player} won by time!",
+        "resign": "{player} won by resignation!",
+        "forfeit": "{player} won by forfeit!"
+    },
+    "player_wins_by": {
+        "default": "{player} wins the game!",
+        "time": "{player} wins by time!",
+        "resign": "{player} wins by resignation!",
+        "forfeit": "{player} wins by forfeit!"
+    }
+}

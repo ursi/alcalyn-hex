@@ -2,23 +2,19 @@ import { defineStore, storeToRefs } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import useAuthStore from './authStore';
 import useSocketStore from './socketStore';
-import { HostedGameData } from '@shared/app/Types';
-import { MoveData } from '@shared/game-engine/Types';
+import { HostedGame, Move } from '@shared/app/models';
 import Rooms from '@shared/app/Rooms';
 import { PlayerIndex } from '@shared/game-engine';
-import { pseudoString } from '@shared/app/pseudoUtils';
 import useLobbyStore from './lobbyStore';
-import { timeValueToSeconds } from '@shared/time-control/TimeValue';
+import { timeValueToMilliseconds } from '@shared/time-control/TimeValue';
 import { getGames } from '../apiClient';
-import { useRouter } from 'vue-router';
-import { sendNotification } from '../notifications';
-import * as Notif from '../notifications';
+import { requestBrowserNotificationPermission } from '../services/notifications';
 
 export type CurrentGame = {
-    id: string;
+    publicId: string;
     isMyTurn: boolean;
     myColor: null | PlayerIndex;
-    hostedGameData: HostedGameData;
+    hostedGame: HostedGame;
 };
 
 /**
@@ -32,7 +28,6 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
 
     const myGames = ref<{ [key: string]: CurrentGame }>({});
     const mostUrgentGame = ref<null | CurrentGame>(null);
-    const router = useRouter();
 
     /**
      * Number of games where I'm in, created or playing.
@@ -51,19 +46,19 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
         ;
     });
 
-    const byRemainingTime = (game0: CurrentGame, game1: CurrentGame): number => {
+    const byRemainingTime = (now: Date) => (game0: CurrentGame, game1: CurrentGame): number => {
         if (null === game0.myColor || null === game1.myColor) {
             return 0;
         }
 
-        const time0 = game0.hostedGameData.timeControl.players[game0.myColor].totalRemainingTime;
-        const time1 = game1.hostedGameData.timeControl.players[game1.myColor].totalRemainingTime;
+        const time0 = game0.hostedGame.timeControl.players[game0.myColor].totalRemainingTime;
+        const time1 = game1.hostedGame.timeControl.players[game1.myColor].totalRemainingTime;
 
-        return timeValueToSeconds(time0) - timeValueToSeconds(time1);
+        return timeValueToMilliseconds(time0, now) - timeValueToMilliseconds(time1, now);
     };
 
     const isPlaying = (game: CurrentGame): boolean => {
-        return game.hostedGameData.state === 'playing';
+        return game.hostedGame.state === 'playing';
     };
 
     const isEmpty = (): boolean => {
@@ -89,7 +84,7 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
 
         const playingGames = Object.values(myGames.value)
             .filter(game => isPlaying(game))
-            .sort(byRemainingTime)
+            .sort(byRemainingTime(new Date()))
         ;
 
         if (0 === playingGames.length) {
@@ -107,95 +102,59 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
     };
 
 
-    socket.on('gameCreated', (hostedGameData: HostedGameData) => {
-        if (hostedGameData.host.publicId !== loggedInPlayer.value?.publicId) {
+    socket.on('gameCreated', (hostedGame: HostedGame) => {
+        if (hostedGame.host.publicId !== loggedInPlayer.value?.publicId) {
             return;
         }
 
-        myGames.value[hostedGameData.id] = {
-            id: hostedGameData.id,
+        myGames.value[hostedGame.publicId] = {
+            publicId: hostedGame.publicId,
             isMyTurn: false,
             myColor: null,
-            hostedGameData,
+            hostedGame: hostedGame,
         };
 
         mostUrgentGame.value = getMostUrgentGame();
 
-        if (Notification.permission === 'default') Notification.requestPermission();
+        requestBrowserNotificationPermission();
     });
 
-    socket.on('gameStarted', (hostedGameData: HostedGameData) => {
-        const { gameData, id } = hostedGameData;
+    socket.on('gameStarted', (hostedGame: HostedGame) => {
+        const { gameData, publicId } = hostedGame;
         const me = loggedInPlayer.value;
 
         if (null === me || null === gameData) {
             return;
         }
 
-        if (!hostedGameData.players.some(p => p.publicId === me.publicId)) {
+        if (!hostedGame.hostedGameToPlayers.some(p => p.player.publicId === me.publicId)) {
             return;
         }
 
-        if (!myGames.value[id]) {
-            myGames.value[id] = {
-                id,
+        if (!myGames.value[publicId]) {
+            myGames.value[publicId] = {
+                publicId,
                 isMyTurn: false,
                 myColor: null,
-                hostedGameData,
+                hostedGame: hostedGame,
             };
         }
 
-        const myColor = hostedGameData.players[0].publicId === loggedInPlayer.value?.publicId ? 0 : 1;
-        myGames.value[id].myColor = myColor;
-        myGames.value[id].isMyTurn = hostedGameData.players[gameData.currentPlayerIndex].publicId === loggedInPlayer.value?.publicId;
-        myGames.value[id].hostedGameData = hostedGameData;
-
-        if (!document.hasFocus()) {
-            const opponent = hostedGameData.players[1 - myColor];
-
-            sendNotification(
-                { body: `Game with ${pseudoString(opponent, 'pseudo')} has started`
-                , tag: Notif.tags.game
-                },
-                () => {
-                    router.push({
-                        name: 'online-game',
-                        params: { gameId: id }
-                    });
-                }
-            );
-        }
+        const myColor = hostedGame.hostedGameToPlayers[0].player.publicId === loggedInPlayer.value?.publicId ? 0 : 1;
+        myGames.value[publicId].myColor = myColor;
+        myGames.value[publicId].isMyTurn = hostedGame.hostedGameToPlayers[gameData.currentPlayerIndex].player.publicId === loggedInPlayer.value?.publicId;
+        myGames.value[publicId].hostedGame = hostedGame;
 
         mostUrgentGame.value = getMostUrgentGame();
     });
 
-    socket.on('moved', (gameId: string, move: MoveData, moveIndex: number, byPlayerIndex: PlayerIndex) => {
+    socket.on('moved', (gameId: string, move: Move, moveIndex: number, byPlayerIndex: PlayerIndex) => {
         if (!myGames.value[gameId] || null === myGames.value[gameId].myColor) {
             return;
         }
 
         const isMyTurn = myGames.value[gameId].myColor !== byPlayerIndex;
         myGames.value[gameId].isMyTurn = isMyTurn;
-
-        if (isMyTurn && !document.hasFocus()) {
-            const opponent =
-                myGames
-                .value[gameId]
-                .hostedGameData
-                .players[byPlayerIndex];
-
-            sendNotification(
-                { body: `${pseudoString(opponent, 'pseudo')} made a move`
-                , tag: Notif.tags.game
-                },
-                () => {
-                    router.push({
-                        name: 'online-game',
-                        params: { gameId }
-                    });
-                }
-            );
-        }
 
         mostUrgentGame.value = getMostUrgentGame();
     });
@@ -237,16 +196,16 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
 
         initialized = true;
 
-        initialGames.forEach(hostedGameData => {
-            const { id, gameData } = hostedGameData;
+        initialGames.forEach(hostedGame => {
+            const { publicId: id, gameData } = hostedGame;
 
             // I'm not in the game
-            if (!hostedGameData.players.some(p => p.publicId === me.publicId)) {
+            if (!hostedGame.hostedGameToPlayers.some(p => p.player.publicId === me.publicId)) {
                 return;
             }
 
             // Game finished
-            if ('ended' === hostedGameData.state) {
+            if ('ended' === hostedGame.state) {
                 return;
             }
 
@@ -254,11 +213,11 @@ const useMyGamesStore = defineStore('myGamesStore', () => {
             let myColor: null | PlayerIndex = null;
 
             if (null !== gameData) {
-                myColor = hostedGameData.players[0].publicId === me.publicId ? 0 : 1;
-                isMyTurn = hostedGameData.players[gameData.currentPlayerIndex].publicId === me.publicId;
+                myColor = hostedGame.hostedGameToPlayers[0].player.publicId === me.publicId ? 0 : 1;
+                isMyTurn = hostedGame.hostedGameToPlayers[gameData.currentPlayerIndex].player.publicId === me.publicId;
             }
 
-            myGames.value[hostedGameData.id] = { id, isMyTurn, myColor, hostedGameData };
+            myGames.value[hostedGame.publicId] = { publicId: id, isMyTurn, myColor, hostedGame: hostedGame };
         });
 
         mostUrgentGame.value = getMostUrgentGame();

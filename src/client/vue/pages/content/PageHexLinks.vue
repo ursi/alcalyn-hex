@@ -6,7 +6,7 @@
     </p>
 
     <div class="links">
-        <div v-for="resource in resources" class="link">
+        <div v-for="resource in resources" :key="resource.link" class="link">
             <div class="illustration">
                 <component v-if="isIcon(resource.illustration)" :is="resource.illustration.icon" />
                 <img v-else :src="resource.illustration.src" class="rounded" :alt="resource.illustration.alt" />
@@ -14,7 +14,7 @@
             <div class="details">
                 <h5 class="card-title">{{ resource.title }}</h5>
                 <h6 class="card-subtitle mb-2 text-body-secondary">{{ resource.subTitle }}</h6>
-                <p v-for="p in resource.paragraph" class="card-text">
+                <p v-for="p in resource.paragraph" :key="p" class="card-text">
                     {{ p }}
                 </p>
                 <a
@@ -98,7 +98,7 @@ const resources: Resource[] = [
         link: 'https://www.hexwiki.net',
         link_show: 'hexwiki.net',
         title: 'HexWiki',
-        subTitle: 'Still-maintained wiki dedicated to Hex',
+        subTitle: 'Wiki dedicated to Hex',
         illustration: { icon: BIconHexagon },
         paragraph: [
             'Detailed wiki on Hex. See the main page to have a list of good pages to explore.',

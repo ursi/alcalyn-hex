@@ -2,23 +2,25 @@
 /* eslint-env browser */
 import GameView from '@client/pixi-board/GameView';
 import useLobbyStore from '@client/stores/lobbyStore';
-import { ref } from '@vue/runtime-core';
+import { ref } from 'vue';
 import AppBoard from '@client/vue/components/AppBoard.vue';
 import ConfirmationOverlay from '@client/vue/components/overlay/ConfirmationOverlay.vue';
 import HostedGameClient from '../../HostedGameClient';
-import { createOverlay } from 'unoverlay-vue';
-import { Ref, onMounted, onUnmounted, watch } from 'vue';
+import { defineOverlay } from '@overlastic/vue';
+import { Ref, onMounted, onUnmounted, watch, watchEffect } from 'vue';
 import useSocketStore from '@client/stores/socketStore';
 import useAuthStore from '@client/stores/authStore';
 import Rooms from '@shared/app/Rooms';
 import { timeControlToCadencyName } from '../../../shared/app/timeControlUtils';
 import { useRoute, useRouter } from 'vue-router';
-import { BIconFlag, BIconXLg, BIconCheck, BIconChatRightText, BIconChatRight, BIconArrowBarLeft } from 'bootstrap-icons-vue';
+import { BIconFlag, BIconXLg, BIconCheck, BIconChatRightText, BIconChatRight, BIconArrowBarLeft, BIconRepeat, BIconArrowCounterclockwise, BIconX } from 'bootstrap-icons-vue';
 import usePlayerSettingsStore from '../../stores/playerSettingsStore';
+import usePlayerLocalSettingsStore from '../../stores/playerLocalSettingsStore';
 import { storeToRefs } from 'pinia';
 import { PlayerIndex } from '@shared/game-engine';
 import { useSeoMeta } from '@unhead/vue';
 import AppGameSidebar from '../components/AppGameSidebar.vue';
+import { fromEngineMove } from '../../../shared/app/models/Move';
 
 useSeoMeta({
     robots: 'noindex',
@@ -36,12 +38,14 @@ if (Array.isArray(gameId)) {
 }
 
 const lobbyStore = useLobbyStore();
+const { loggedInPlayer } = storeToRefs(useAuthStore());
 const router = useRouter();
 
 /*
  * Confirm move
  */
 const { playerSettings } = storeToRefs(usePlayerSettingsStore());
+const { localSettings } = usePlayerLocalSettingsStore();
 const confirmMove: Ref<null | (() => void)> = ref(null);
 
 const shouldDisplayConfirmMove = (): boolean => {
@@ -62,8 +66,66 @@ const shouldDisplayConfirmMove = (): boolean => {
     return {
         blitz: playerSettings.value.confirmMoveBlitz,
         normal: playerSettings.value.confirmMoveNormal,
-        correspondance: playerSettings.value.confirmMoveCorrespondance,
-    }[timeControlToCadencyName(hostedGameClient.value.getHostedGameData().gameOptions)];
+        correspondence: playerSettings.value.confirmMoveCorrespondence,
+    }[timeControlToCadencyName(hostedGameClient.value.getHostedGame().gameOptions)];
+};
+
+/*
+ * Undo move
+ */
+const shouldDisplayUndoMove = (): boolean => {
+    if (null === hostedGameClient.value || null === playerSettings.value) {
+        return false;
+    }
+
+    // I am watcher
+    if (-1 === getLocalPlayerIndex()) {
+        return false;
+    }
+
+    if ('playing' !== hostedGameClient.value.getState()) {
+        return false;
+    }
+
+    // Show a disabled button if I sent an undo request,
+    // but hide it if opponent sent an undo request.
+    if (hostedGameClient.value?.getUndoRequest() === 1 - getLocalPlayerIndex()) {
+        return false;
+    }
+
+    return true;
+};
+
+const shouldDisableUndoMove = (): boolean => {
+    if (!hostedGameClient.value) {
+        return true;
+    }
+
+    const game = hostedGameClient.value.getGame();
+
+    return hostedGameClient.value.getUndoRequest() === getLocalPlayerIndex()
+        || true !== game.canPlayerUndo(getLocalPlayerIndex() as PlayerIndex)
+    ;
+};
+
+const shouldDisplayAnswerUndoMove = (): boolean => {
+    if (!hostedGameClient.value) {
+        return false;
+    }
+
+    if ('playing' !== hostedGameClient.value.getState()) {
+        return false;
+    }
+
+    return hostedGameClient.value?.getUndoRequest() === 1 - getLocalPlayerIndex();
+};
+
+const askUndo = (): void => {
+    hostedGameClient.value?.sendAskUndo();
+};
+
+const answerUndo = (accept: boolean): void => {
+    hostedGameClient.value?.sendAnswerUndo(accept);
 };
 
 /*
@@ -75,13 +137,12 @@ useSocketStore().joinRoom(Rooms.game(gameId));
 onUnmounted(() => useSocketStore().leaveRoom(Rooms.game(gameId)));
 
 const getLocalPlayerIndex = (): number => {
-    const { loggedInPlayer } = useAuthStore();
 
-    if (null === loggedInPlayer || !hostedGameClient.value) {
+    if (null === loggedInPlayer.value || !hostedGameClient.value) {
         return -1;
     }
 
-    return hostedGameClient.value.getPlayerIndex(loggedInPlayer);
+    return hostedGameClient.value.getPlayerIndex(loggedInPlayer.value);
 };
 
 const listenHexClick = () => {
@@ -89,12 +150,13 @@ const listenHexClick = () => {
         throw new Error('no game view');
     }
 
-    gameView.on('hexClicked', move => {
+    gameView.on('hexClicked', coords => {
         if (null === hostedGameClient.value) {
             throw new Error('hex clicked but hosted game is null');
         }
 
         const game = hostedGameClient.value.getGame();
+        const move = game.createMoveOrSwapMove(coords);
 
         try {
             // Must get local player again in case player joined after (click "Watch", then "Join")
@@ -106,17 +168,32 @@ const listenHexClick = () => {
 
             hostedGameClient.value.getGame().checkMove(move, localPlayerIndex as PlayerIndex);
 
+            // Send move if move preview is not enabled
             if (!shouldDisplayConfirmMove()) {
                 game.move(move, localPlayerIndex as PlayerIndex);
-                hostedGameClient.value.sendMove(move);
+                hostedGameClient.value.sendMove(fromEngineMove(move));
                 return;
             }
 
-            confirmMove.value = () => {
+            // Cancel move preview if I click on it
+            const previewedMove = gameView?.getPreviewedMove();
+
+            if (previewedMove && previewedMove.move.sameAs(move)) {
                 gameView?.removePreviewMove();
-                game.move(move, localPlayerIndex as PlayerIndex);
-                hostedGameClient.value?.sendMove(move);
                 confirmMove.value = null;
+                return;
+            }
+
+            // What happens when I validate move
+            confirmMove.value = () => {
+                game.move(move, localPlayerIndex as PlayerIndex);
+                confirmMove.value = null;
+
+                if (!hostedGameClient.value) {
+                    return;
+                }
+
+                hostedGameClient.value.sendMove(fromEngineMove(move));
             };
 
             gameView?.previewMove(move, localPlayerIndex as PlayerIndex);
@@ -126,7 +203,7 @@ const listenHexClick = () => {
     });
 };
 
-const initGameView = () => {
+const initGameView = async () => {
     if (!hostedGameClient.value) {
         throw new Error('Cannot init game view now, no hostedGameClient');
     }
@@ -139,9 +216,11 @@ const initGameView = () => {
 
     gameView = new GameView(game, boardContainer.value);
 
+    await gameView.ready();
+
     if (null !== playerSettings.value) {
         gameView.setDisplayCoords(playerSettings.value.showCoords);
-        gameView.setOrientation({
+        gameView.setPreferredOrientations({
             landscape: playerSettings.value.orientationLandscape,
             portrait: playerSettings.value.orientationPortrait,
         });
@@ -153,7 +232,7 @@ const initGameView = () => {
         }
 
         gameView.setDisplayCoords(settings.showCoords);
-        gameView.setOrientation({
+        gameView.setPreferredOrientations({
             landscape: settings.orientationLandscape,
             portrait: settings.orientationPortrait,
         });
@@ -179,10 +258,10 @@ const loadGame = async () => {
         return;
     }
 
-    initGameView();
+    await initGameView();
 
-    const playerPseudos = hostedGameClient.value.getHostedGameData().players.map(p => p.pseudo);
-    const { state, host } = hostedGameClient.value.getHostedGameData();
+    const playerPseudos = hostedGameClient.value.getPlayers().map(p => p.pseudo);
+    const { state, host } = hostedGameClient.value.getHostedGame();
     const stateForTitle = playerPseudos.length < 2 && 'created' === state
         ? 'Waiting for an opponent'
         : state[0].toUpperCase() + state.slice(1);
@@ -205,7 +284,7 @@ onMounted(() => loadGame());
 
 const join = () => hostedGameClient.value?.sendJoinGame();
 
-const confirmationOverlay = createOverlay(ConfirmationOverlay);
+const confirmationOverlay = defineOverlay(ConfirmationOverlay);
 
 /*
  * Resign
@@ -279,40 +358,107 @@ const toggleCoords = () => {
 /*
  * Rematch
  */
-const rematch = async (): Promise<void> => {
+const canAcceptRematch: Ref<boolean> = ref(false);
+
+watchEffect(async () => {
+    if (hostedGameClient.value == null) return;
+    const rematchId = hostedGameClient.value.getRematchGameId();
+    if (rematchId == null) return;
+    if (loggedInPlayer.value == null) return;
+    if (getLocalPlayerIndex() === -1) return;
+    const rematchGameClient = await lobbyStore.retrieveHostedGameClient(rematchId);
+    if (rematchGameClient == null) return;
+    canAcceptRematch.value = rematchGameClient.canJoin(loggedInPlayer.value);
+});
+
+const canRematch = (): boolean => {
+    if (-1 === getLocalPlayerIndex() || null === hostedGameClient.value) {
+        return false;
+    }
+    return hostedGameClient.value.canRematch();
+};
+
+const createOrAcceptRematch = async (): Promise<void> => {
     if (!hostedGameClient.value) {
         throw new Error('Error while trying to rematch, no current game');
     }
 
-    const hostedGameClientRematch = await lobbyStore.createGame(
-        hostedGameClient.value.getHostedGameData().gameOptions,
-    );
+    const rematchId = hostedGameClient.value.getRematchGameId();
+    let hostedRematchClient;
+
+    if (rematchId != null) {
+        hostedRematchClient = await lobbyStore.retrieveHostedGameClient(rematchId);
+        if (hostedRematchClient == null) {
+            throw new Error('A rematch game does not exist');
+        }
+    } else {
+        hostedRematchClient = await lobbyStore.rematchGame(
+            hostedGameClient.value.getId()
+        );
+    }
+
+    if (loggedInPlayer && hostedRematchClient.canJoin(loggedInPlayer.value)) {
+        await hostedRematchClient.sendJoinGame();
+    }
 
     router.push({
         name: 'online-game',
         params: {
-            gameId: hostedGameClientRematch.getId(),
+            gameId: hostedRematchClient.getId(),
         },
+    });
+};
+
+const viewRematch = (): void => {
+    if (!hostedGameClient.value) {
+        throw new Error('Error while trying to view rematch, no current game');
+    }
+    const rematchId = hostedGameClient.value.getRematchGameId();
+    if (rematchId == null) {
+        throw new Error('Error while trying to view rematch, empty rematchId');
+    }
+    router.push({
+        name: 'online-game',
+        params: {
+            gameId: rematchId
+        }
     });
 };
 
 /*
  * Sidebar
  */
-const sidebarOpen = ref(false);
+const showSidebar = (open = true): void => {
+    localSettings.openSidebar = open;
+};
 
+const isSidebarCurrentlyOpen = (): boolean => {
+    if (undefined !== localSettings.openSidebar) {
+        return localSettings.openSidebar;
+    }
+
+    return window.screen.width >= 576;
+};
+
+/*
+ * Chat
+ */
 watch(hostedGameClient, game => {
     if (null === game) {
         return;
     }
 
     game.on('chatMessagePosted', () => {
-        if (sidebarOpen.value) {
+        if (isSidebarCurrentlyOpen()) {
             game.markAllMessagesRead();
         }
     });
 
-    watch(sidebarOpen, () => game.markAllMessagesRead());
+    watch(localSettings, () => {
+        if (isSidebarCurrentlyOpen()) {
+            game.markAllMessagesRead();
+        }
+    });
 });
 
 const unreadMessages = (): number => {
@@ -327,56 +473,114 @@ const unreadMessages = (): number => {
 </script>
 
 <template>
-    <div v-show="null !== hostedGameClient" class="game-and-sidebar-container" :class="sidebarOpen ? 'sidebar-open' : ''">
+    <div v-show="null !== hostedGameClient" class="game-and-sidebar-container" :class="localSettings.openSidebar ? 'sidebar-open' : (undefined === localSettings.openSidebar ? 'sidebar-auto' : '')">
         <div class="game">
+
+            <!-- Game board, "Accept" button -->
             <div class="board-container" ref="boardContainer">
                 <AppBoard
                     v-if="null !== hostedGameClient && null !== gameView"
                     :players="hostedGameClient.getPlayers()"
-                    :time-control-options="hostedGameClient.getTimeControlOptions()"
-                    :time-control-values="hostedGameClient.getTimeControlValues()"
-                    :game-view="gameView"
-                    :rematch="rematch"
-                ></AppBoard>
+                    :timeControlOptions="hostedGameClient.getTimeControlOptions()"
+                    :timeControlValues="hostedGameClient.getTimeControlValues()"
+                    :gameView="gameView"
+                />
 
-                <div v-if="hostedGameClient && hostedGameClient.canJoin(useAuthStore().loggedInPlayer)" class="join-button-container">
+                <div v-if="hostedGameClient && hostedGameClient.canJoin(loggedInPlayer)" class="join-button-container">
                     <div class="d-flex justify-content-center">
                         <button class="btn btn-lg btn-success" @click="join()">Accept</button>
                     </div>
                 </div>
             </div>
 
+            <!-- Control buttons at bottom of game board (resign, undo, confirm move, ...) -->
             <nav class="menu-game navbar" v-if="null !== hostedGameClient">
                 <div class="buttons container-fluid">
-                    <button type="button" class="btn btn-outline-primary" v-if="canResign() && !canCancel()" @click="resign()"><BIconFlag /><span class="btn-label"> Resign</span></button>
-                    <button type="button" class="btn btn-outline-primary" v-if="canCancel()" @click="cancel()"><BIconXLg /><span class="btn-label"> Cancel</span></button>
-                    <button type="button" class="btn" v-if="shouldDisplayConfirmMove()" :class="null === confirmMove ? 'btn-outline-secondary' : 'btn-success'" :disabled="null === confirmMove" @click="null !== confirmMove && confirmMove()"><BIconCheck /> Confirm<span class="btn-label"> move</span></button>
-                    <button type="button" class="btn btn-outline-primary position-relative" @click="sidebarOpen = true">
+
+                    <!-- Resign -->
+                    <button type="button" class="btn btn-outline-danger" v-if="canResign() && !canCancel()" @click="resign()">
+                        <BIconFlag />
+                        <span class="d-none d-lg-inline">{{ ' ' + $t('resign') }}</span>
+                    </button>
+
+                    <!-- Cancel -->
+                    <button type="button" class="btn btn-outline-primary" v-if="canCancel()" @click="cancel()">
+                        <BIconXLg />
+                        <span class="d-none d-md-inline">{{ ' ' + $t('cancel') }}</span>
+                    </button>
+
+                    <!-- Confirm move -->
+                    <button type="button" class="btn" v-if="shouldDisplayConfirmMove()" :class="null === confirmMove ? 'btn-outline-secondary' : 'btn-success'" :disabled="null === confirmMove" @click="null !== confirmMove && confirmMove()">
+                        <BIconCheck />
+                        <span class="d-md-none">{{ ' ' + $t('confirm_move.button_label_short') }}</span>
+                        <span class="d-none d-md-inline">{{ ' ' + $t('confirm_move.button_label') }}</span>
+                    </button>
+
+                    <!-- Undo -->
+                    <button type="button" class="btn btn-primary" v-if="shouldDisplayUndoMove()" @click="askUndo()" :disabled="shouldDisableUndoMove()" :class="{ 'btn-outline-secondary btn-disabled': shouldDisableUndoMove() }">
+                        <BIconArrowCounterclockwise />
+                        <span class="d-none d-md-inline">{{ $t('undo.undo_move') }}</span>
+                    </button>
+
+                    <!-- Undo accept -->
+                    <button type="button" class="btn btn-success" v-if="shouldDisplayAnswerUndoMove()" @click="answerUndo(true)">
+                        <BIconCheck />
+                        <span class="d-none d-md-inline">{{ $t('undo.accept') }}</span>
+                    </button>
+
+                    <!-- Undo reject -->
+                    <button type="button" class="btn btn-danger" v-if="shouldDisplayAnswerUndoMove()" @click="answerUndo(false)">
+                        <BIconX />
+                        <span class="d-none d-lg-inline">{{ $t('undo.reject') }}</span>
+                    </button>
+
+                    <!-- Rematch -->
+                    <button type="button" class="btn btn-outline-primary" v-if="canRematch()" @click="createOrAcceptRematch()">
+                        <BIconRepeat />
+                        <span class="d-none d-md-inline">{{ ' ' + $t('rematch.label') }}</span>
+                    </button>
+
+                    <!-- Accept / View rematch -->
+                    <template v-else-if="hostedGameClient.getRematchGameId() != null">
+                        <button type="button" class="btn btn-success" v-if="canAcceptRematch" @click="createOrAcceptRematch()">
+                            {{ ' ' + $t('rematch.accept') }}
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" v-else @click="viewRematch()">
+                            {{ ' ' + $t('rematch.view') }}
+                        </button>
+                    </template>
+
+                    <!-- Chat -->
+                    <button type="button" class="btn btn-outline-primary position-relative" @click="showSidebar()">
                         <BIconChatRightText v-if="hostedGameClient.getChatMessages().length > 0" />
                         <BIconChatRight v-else />
-                        <span class="btn-label"> Chat</span>
+                        <span class="d-none d-lg-inline">{{ ' ' + $t('chat') }}</span>
                         <span v-if="unreadMessages() > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
                             {{ unreadMessages() }}
-                            <span class="d-none"> unread messages</span>
+                            <span class="d-none">{{ ' ' + $t('unread_messages') }}</span>
                         </span>
                     </button>
 
-                    <button v-if="!sidebarOpen" type="button" class="btn btn-outline-primary toggle-sidebar-btn" @click="sidebarOpen = true" aria-label="Open game sidebar and chat"><BIconArrowBarLeft /></button>
+                    <!-- Right button, open sidebar -->
+                    <button type="button" class="btn btn-outline-primary open-sidebar-btn" @click="showSidebar()" aria-label="Open game sidebar and chat"><BIconArrowBarLeft /></button>
+
                 </div>
             </nav>
         </div>
 
+        <!-- Game sidebar -->
         <div class="sidebar bg-body" v-if="(hostedGameClient instanceof HostedGameClient)">
             <AppGameSidebar
-                :hosted-game-client="hostedGameClient"
-                @close="sidebarOpen = false"
+                :hostedGameClient="hostedGameClient"
+                :gameView="gameView"
+                @close="showSidebar(false)"
                 @toggle-coords="toggleCoords()"
             />
         </div>
     </div>
 
     <div v-if="null === hostedGameClient || null === gameView" class="container-fluid my-3">
-        <p class="lead text-center">Loading game…</p>
+        <p class="lead text-center">{{ $t('loading_game') }}</p>
     </div>
 </template>
 
@@ -404,12 +608,6 @@ const unreadMessages = (): number => {
     justify-content center
     gap 0.5em
 
-.btn-label
-    display none
-
-    @media (min-width: 768px)
-        display inline
-
 .game-and-sidebar-container
     position relative
     display flex
@@ -418,20 +616,14 @@ const unreadMessages = (): number => {
         width 100%
 
     .sidebar
-        position relative
         display none
-        width 75%
 
-        @media (max-width: 575px)
-            width 100%
-            position absolute
-            right 0
-            top 0
-            bottom 0
-            --bs-bg-opacity 0.85
-            // backdrop-filter blur(2px) // laggy on mobile
+    .open-sidebar-btn
+        position absolute
+        right 0
+        margin-right 0.75em
 
-.sidebar-open
+sidebarOpen()
     .game
         width 100%
 
@@ -439,21 +631,34 @@ const unreadMessages = (): number => {
             width 50%
 
         @media (min-width: 992px)
-            width 67%
+            width 64%
 
     .sidebar
         display flex
+        position relative
         width 100%
+
+        @media (max-width: 575px)
+            position absolute
+            right 0
+            top 0
+            bottom 0
+            --bs-bg-opacity 0.85
+            // backdrop-filter blur(2px) // laggy on mobile
 
         @media (min-width: 576px)
             width 50%
 
         @media (min-width: 992px)
-            width 33%
+            width 36%
 
-.buttons
-    .toggle-sidebar-btn
-        position absolute
-        right 0
-        margin-right 0.75em
+    .open-sidebar-btn
+        display none
+
+.sidebar-open
+    sidebarOpen()
+
+.sidebar-auto
+    @media (min-width: 576px)
+        sidebarOpen()
 </style>

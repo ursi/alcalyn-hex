@@ -4,7 +4,7 @@ import { WebsocketControllerInterface } from '.';
 import { HexSocket } from '../../server';
 import ChatMessage from '../../../shared/app/models/ChatMessage';
 
-@Service({ id: 'websocket_controller', multiple: true })
+@Service()
 export default class ChatWebsocketController implements WebsocketControllerInterface
 {
     constructor(
@@ -21,15 +21,13 @@ export default class ChatWebsocketController implements WebsocketControllerInter
                 return;
             }
 
-            const chatMessage: ChatMessage = {
-                persisted: false,
-                gameId,
-                content,
-                author: player,
-                createdAt: new Date(),
-            };
+            const chatMessage = new ChatMessage();
 
-            const result = await this.hostedGameRepository.postChatMessage(chatMessage);
+            chatMessage.player = player;
+            chatMessage.content = content;
+            chatMessage.createdAt = new Date();
+
+            const result = await this.hostedGameRepository.postChatMessage(gameId, chatMessage);
 
             if (true !== result) {
                 answer(result);

@@ -3,9 +3,8 @@
 import GameView from '@client/pixi-board/GameView';
 import AppBoard from '../components/AppBoard.vue';
 import { Game, IllegalMove, PlayerIndex, calcRandomMove } from '@shared/game-engine';
-import { GameOptionsData, defaultGameOptions } from '@shared/app/GameOptions';
+import { HostedGameOptions, Player } from '../../../shared/app/models';
 import { Ref, onMounted, ref } from 'vue';
-import Player from '../../../shared/app/models/Player';
 import useAuthStore from '../../stores/authStore';
 import { useSeoMeta } from '@unhead/vue';
 
@@ -16,8 +15,8 @@ useSeoMeta({
 
 const offlineBoardContainer = ref<HTMLElement>();
 const gameView = ref<GameView>();
-const selectedGameOptions: Partial<GameOptionsData> = JSON.parse(history.state.gameOptionsJson ?? '{}');
-const gameOptions: GameOptionsData = { ...defaultGameOptions, ...selectedGameOptions };
+const selectedGameOptions: Partial<HostedGameOptions> = JSON.parse(history.state.gameOptionsJson ?? '{}');
+const gameOptions: HostedGameOptions = { ...new HostedGameOptions(), ...selectedGameOptions };
 const players: Ref<Player[]> = ref([]);
 
 const makeAIMoveIfApplicable = async (game: Game, players: Player[]): Promise<void> => {
@@ -74,7 +73,9 @@ const initGame = (gameContainer: HTMLElement) => {
 
     gameView.value = new GameView(game, gameContainer);
 
-    gameView.value.on('hexClicked', move => {
+    gameView.value.on('hexClicked', coords => {
+        const move = game.createMoveOrSwapMove(coords);
+
         try {
             game.move(move, playerIndex as PlayerIndex);
         } catch (e) {
@@ -101,6 +102,8 @@ onMounted(() => {
  */
 const reload = ref(0);
 
+// TODO: Implement the rematch button for offline games
+// eslint-disable-next-line
 const rematch = () => {
     if (!offlineBoardContainer.value) {
         throw new Error('Missing element with ref="offlineBoardContainer"');
@@ -116,10 +119,9 @@ const rematch = () => {
         <AppBoard
             :key="reload"
             v-if="gameView"
-            :game-view="gameView"
+            :gameView="gameView"
             :players="players"
-            :rematch="rematch"
-        ></AppBoard>
+        />
     </div>
 </template>
 

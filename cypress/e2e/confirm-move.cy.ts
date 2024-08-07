@@ -4,10 +4,10 @@ describe('Confirm move', () => {
         cy.get('.menu-top').contains(/Guest \d+/);
 
         // Create normal game
-        cy.contains('Play vs AI').click();
+        cy.createAIGameWithRandom(false);
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains('Custom')
             .click()
@@ -16,11 +16,9 @@ describe('Confirm move', () => {
             .get('input[type=number]')
             .clear()
             .type('11')
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
+
+        cy.submitAIGame();
 
         // Confirm move button not there by default on normal games
         cy.contains('button', 'Cancel');
@@ -41,8 +39,7 @@ describe('Confirm move', () => {
 
         cy.contains('Confirm move').should('have.attr', 'disabled');
 
-        cy.get('canvas');
-        cy.get('body').click(506, 397);
+        cy.play(506, 397);
 
         cy.contains('Confirm move').should('not.have.attr', 'disabled');
         cy.contains('Confirm move').click();
@@ -80,7 +77,6 @@ describe('Confirm move', () => {
         cy.visit('/games/705e2163-9fbd-4fd7-a408-098c5919625c');
 
         cy.contains('Loading game 705e2163-9fbd-4fd7-a408-098c5919625c…').should('not.exist');
-        cy.get('.modal-footer').contains('button', 'Close').click();
         cy.contains('Confirm move').should('not.exist');
     });
 

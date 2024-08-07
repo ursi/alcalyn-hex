@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /* eslint-env browser */
 import GameView from '../../pixi-board/GameView';
-import { onMounted, onUnmounted, ref } from '@vue/runtime-core';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { PropType, toRefs } from 'vue';
+import { BIconTrophyFill } from 'bootstrap-icons-vue';
 import GameFinishedOverlay from './overlay/GameFinishedOverlay.vue';
-import { createOverlay } from 'unoverlay-vue';
+import { defineOverlay } from '@overlastic/vue';
 import AppChrono from './AppChrono.vue';
-import AppPseudoWithOnlineStatus from './AppPseudoWithOnlineStatus.vue';
+import AppPseudo from './AppPseudo.vue';
 import Player from '../../../shared/app/models/Player';
 import TimeControlType from '../../../shared/time-control/TimeControlType';
 import { GameTimeData } from '../../../shared/time-control/TimeControl';
@@ -20,17 +21,17 @@ const props = defineProps({
     },
     timeControlOptions: {
         type: Object as PropType<TimeControlType>,
+        required: false,
+        default: null,
     },
     timeControlValues: {
         type: Object as PropType<GameTimeData>,
+        required: false,
+        default: null,
     },
     gameView: {
         type: GameView,
         required: true,
-    },
-    rematch: {
-        type: Function,
-        required: false,
     },
 });
 
@@ -46,7 +47,7 @@ if (!gameView || !game) {
     throw new Error('gameView is required');
 }
 
-onMounted(() => {
+onMounted(async () => {
     if (!pixiApp.value) {
         throw new Error('No element with ref="pixiApp"');
     }
@@ -54,6 +55,8 @@ onMounted(() => {
     if (!gameView) {
         throw new Error('gameView has no value');
     }
+
+    await gameView.ready();
 
     pixiApp.value.appendChild(gameView.getView() as unknown as Node);
 });
@@ -78,14 +81,12 @@ onUnmounted(() => {
 /*
  * Game end: win popin
  */
-const gameFinishedOverlay = createOverlay(GameFinishedOverlay);
-const { rematch } = props;
+const gameFinishedOverlay = defineOverlay(GameFinishedOverlay);
 
 gameView.on('endedAndWinAnimationOver', () => {
     gameFinishedOverlay({
         game,
-        players: players.value,
-        rematch,
+        players: players.value
     });
 });
 
@@ -101,12 +102,15 @@ onUnmounted(() => gameView.removeAllListeners('endedAndWinAnimationOver'));
         <div v-if="game" :class="['game-info-overlay', `orientation-${orientation}`]">
             <div class="player player-a">
                 <p class="h5" v-if="players">
-                    <AppPseudoWithOnlineStatus
+                    <AppPseudo
                         v-if="players[0]"
+                        rating
+                        onlineStatus
                         :player="players[0]"
                         classes="text-danger"
                     />
-                    <span v-else class="fst-italic">waiting…</span>
+                    <span v-else class="fst-italic">{{ $t('waiting') }}</span>
+                    <span v-if="game.getWinner() === 0">&nbsp;<BIconTrophyFill class="text-warning" /></span>
                 </p>
                 <AppChrono
                     v-if="timeControlOptions && timeControlValues"
@@ -116,12 +120,15 @@ onUnmounted(() => gameView.removeAllListeners('endedAndWinAnimationOver'));
             </div>
             <div class="player player-b">
                 <p class="h5" v-if="players">
-                    <AppPseudoWithOnlineStatus
+                    <span v-if="game.getWinner() === 1"><BIconTrophyFill class="text-warning" />&nbsp;</span>
+                    <AppPseudo
                         v-if="players[1]"
+                        rating
+                        onlineStatus
                         :player="players[1]"
                         classes="text-primary"
                     />
-                    <span v-else class="fst-italic">waiting…</span>
+                    <span v-else class="fst-italic">{{ $t('waiting') }}</span>
                 </p>
                 <AppChrono
                     v-if="timeControlOptions && timeControlValues"
@@ -130,7 +137,7 @@ onUnmounted(() => gameView.removeAllListeners('endedAndWinAnimationOver'));
                 />
             </div>
         </div>
-        <p v-else>Initializing game…</p>
+        <p v-else>{{ $t('initializing_game') }}</p>
     </div>
 </template>
 

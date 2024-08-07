@@ -6,7 +6,9 @@ const hasOnlyClass = (
     'text-primary',
     'text-secondary',
 ].every(
-    c => $element.hasClass(c) === (c === classname),
+    c => !['text-danger', 'text-primary', 'text-secondary'].includes(classname)
+        || $element.hasClass(c) === (c === classname)
+    ,
 );
 
 const isEmptyHexagon = ($element: JQuery<HTMLElement>): boolean => {
@@ -105,10 +107,10 @@ describe('My turn notification', () => {
         cy.visit('/');
         cy.get('.menu-top').contains(/Guest \d+/);
 
-        cy.contains('Play vs AI').click();
+        cy.createAIGameWithRandom(false);
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains('Custom')
             .click()
@@ -119,15 +121,13 @@ describe('My turn notification', () => {
         ;
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains(/^First$/)
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
+
+        cy.submitAIGame();
 
         cy.contains('random bot');
 

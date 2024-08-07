@@ -1,9 +1,7 @@
-import { MoveData, Outcome } from '../game-engine/Types';
+import { Outcome } from '../game-engine/Types';
 import { PlayerIndex } from '../game-engine';
-import { HostedGameData } from './Types';
-import Player from './models/Player';
 import { GameTimeData } from 'time-control/TimeControl';
-import ChatMessage from './models/ChatMessage';
+import { ChatMessage, GameAnalyze, HostedGame, Move, Player, Rating } from './models';
 
 export type HexClientToServerEvents = {
     /**
@@ -21,19 +19,26 @@ export type HexClientToServerEvents = {
      * A player wants to play a move.
      * Answer contains either true on success move, either a string containing an error message.
      */
-    move: (gameId: string, move: MoveData, answer: (result: true | string) => void) => void;
+    move: (gameId: string, move: Move, answer: (result: true | string) => void) => void;
 
     /**
      * A player send a chat message on a game
      */
     sendChat: (gameId: string, content: string, answer: (result: true | string) => void) => void;
+
+    /**
+     * Returns info about server:
+     *  - serverDate: Used to allow client to synchronize with server date,
+     *      and prevent displaying a shifted chrono in games.
+     */
+    getServerStatus: (answer: (serverStatus: { serverDate: Date }) => void) => void;
 };
 
 export type HexServerToClientEvents = {
     /**
      * A game has been created.
      */
-    gameCreated: (hostedGameData: HostedGameData) => void;
+    gameCreated: (hostedGame: HostedGame) => void;
 
     /**
      * A player joined gameId.
@@ -44,17 +49,17 @@ export type HexServerToClientEvents = {
      * Game has started.
      * All info are sent again, with GameData.
      */
-    gameStarted: (hostedGameData: HostedGameData) => void;
+    gameStarted: (hostedGame: HostedGame) => void;
 
     /**
      * Game has been canceled.
      */
-    gameCanceled: (gameId: string) => void;
+    gameCanceled: (gameId: string, canceledAt: { date: Date }) => void;
 
     /**
      * A move has been played by a player.
      */
-    moved: (gameId: string, move: MoveData, moveIndex: number, byPlayerIndex: PlayerIndex) => void;
+    moved: (gameId: string, move: Move, moveIndex: number, byPlayerIndex: PlayerIndex) => void;
 
     /**
      * Players remaining time should be updated.
@@ -62,9 +67,26 @@ export type HexServerToClientEvents = {
     timeControlUpdate: (gameId: string, gameTimeData: GameTimeData) => void;
 
     /**
-     * A game has ended and there is a winner.
+     * A rematch game is now available and can be accepted.
      */
-    ended: (gameId: string, winner: PlayerIndex, outcome: Outcome) => void;
+    rematchAvailable: (gameId: string, rematchId: string) => void;
+
+    /**
+     * A game has ended and there is a winner.
+     * endedAt is in object to allow date normalization (or will denormalize date as string instead of Date).
+     */
+    ended: (gameId: string, winner: PlayerIndex, outcome: Outcome, endedAt: { date: Date }) => void;
+
+    /**
+     * Some players ratings have been updated
+     * due to a ranked game ended.
+     *
+     * Only overall ratings are emitted in "ratings" parameter.
+     *
+     * Used to display rating changes on game page,
+     * and update rating displayed next to player username.
+     */
+    ratingsUpdated: (gameId: string, ratings: Rating[]) => void;
 
     /**
      * A player just connected to server.
@@ -83,5 +105,29 @@ export type HexServerToClientEvents = {
     /**
      * A chat message has been posted in a game.
      */
-    chat: (chatMessage: ChatMessage) => void;
+    chat: (gameId: string, chatMessage: ChatMessage) => void;
+
+    /**
+     * A player wants to undo his last move.
+     */
+    askUndo: (gameId: string, byPlayerIndex: number) => void;
+
+    /**
+     * Opponent accepted or rejected undo request,
+     * game has been updated server side, or not.
+     * Undo request is over.
+     */
+    answerUndo: (gameId: string, accept: boolean) => void;
+
+    /**
+     * Undo request has been automatically canceled
+     */
+    cancelUndo: (gameId: string) => void;
+
+    /**
+     * Analyze has been requested for a given game, or has finished.
+     * See gameAnalyze.analyze and gameAnalyze.endedAt
+     * to know if game analyze has finished, or is just requested.
+     */
+    analyze: (gameId: string, gameAnalyze: GameAnalyze) => void;
 };

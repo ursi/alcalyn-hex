@@ -1,11 +1,11 @@
 import { defineStore, storeToRefs } from 'pinia';
-import { PlayerSettingsData } from '@shared/app/Types';
+import { PlayerSettings } from '../../shared/app/models';
 import { Ref, ref, watch } from 'vue';
 import { apiGetPlayerSettings, apiPatchPlayerSettings } from '../apiClient';
 import useAuthStore from './authStore';
 
 /**
- * Current player settings.
+ * Player settings stored in database, so shared accross his devices
  *
  * Contains player settings when needed
  * for every games (ask move confirm or not...)
@@ -15,9 +15,9 @@ const usePlayerSettingsStore = defineStore('playerSettingsStore', () => {
 
     const { loggedInPlayer } = storeToRefs(useAuthStore());
 
-    const playerSettings: Ref<null | PlayerSettingsData> = ref(null);
+    const playerSettings: Ref<null | PlayerSettings> = ref(null);
 
-    const reloadPlayerSettings = async (): Promise<PlayerSettingsData> => {
+    const reloadPlayerSettings = async (): Promise<PlayerSettings> => {
         const promise = apiGetPlayerSettings();
 
         promise.then(settings => playerSettings.value = settings);

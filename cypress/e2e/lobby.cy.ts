@@ -9,22 +9,24 @@ describe('Lobby', () => {
             .as('myUsername')
         ;
 
-        cy.contains('Play vs AI').click();
+        cy.createAIGameWithRandom();
 
-        cy.contains('Game options')
-            .closest('.modal-content')
-            .contains('Play vs AI')
+        cy.contains('10:00');
+
+        cy.contains('PlayHex')
             .click()
         ;
 
-        cy.contains('Play Hex')
-            .click()
-        ;
+        /**
+         * Makes "Guest 1234" will instead search for regex /Guest\s+1234/
+         * because of unsure spaces between Guest and its username.
+         */
+        const usernameMatch = (username: JQuery<HTMLElement>): string => String(username).split(/\s+/g).join('\\s+');
 
         // My game is listed when I come back to lobby
         cy.get('@myUsername').then(myUsername => {
             cy
-                .contains(new RegExp(`${myUsername} vs Determinist random bot|Determinist random bot vs ${myUsername}`))
+                .contains(new RegExp(`${usernameMatch(myUsername)}.+Determinist random bot|Determinist random bot.+${usernameMatch(myUsername)}`))
                 .closest('tr')
                 .contains('Watch')
                 .closest('tr')
@@ -45,7 +47,7 @@ describe('Lobby', () => {
         // My game is listed when I load page
         cy.get('@myUsername').then(myUsername => {
             cy
-                .contains(new RegExp(`${myUsername} vs Determinist random bot|Determinist random bot vs ${myUsername}`))
+                .contains(new RegExp(`${usernameMatch(myUsername)}.+Determinist random bot|Determinist random bot.+${usernameMatch(myUsername)}`))
                 .closest('tr')
                 .contains('Watch')
                 .closest('tr')
@@ -56,7 +58,7 @@ describe('Lobby', () => {
 
     it('displays created, playing and some ended games', () => {
         cy.intercept('/api/games', {
-            fixture: 'lobby-games.json',
+            fixture: 'lobby/lobby-games.json',
         });
 
         cy.visit('/');
@@ -73,17 +75,19 @@ describe('Lobby', () => {
         cy
             // Current games
             .contains('Watch current games')
-            .next('table')
-            .contains('Player A vs Player B')
+            .next('.table-responsive')
+            .contains('Player A')
             .closest('tr')
             .contains('Watch')
         ;
 
+        cy.contains('Watch current games').next('.table-responsive').contains('Player B');
+
         cy
             // Finished games
             .contains('Finished games')
-            .next('table')
-            .contains('Player C won against Player D')
+            .next('.table-responsive')
+            .contains('Player C')
             .closest('tr')
             .contains('Review')
 
@@ -91,6 +95,8 @@ describe('Lobby', () => {
             .closest('table')
             .contains(/Cancel A|Cancel B/).should('not.exist')
         ;
+
+        cy.contains('Finished games').next('.table-responsive').contains('Player D');
     });
 
     it('warns when there is custom rules', () => {

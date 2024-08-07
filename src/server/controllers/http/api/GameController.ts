@@ -1,13 +1,18 @@
-import HostedGameRepository from '../../../repositories/HostedGameRepository';
+import HostedGameRepository, { GameError } from '../../../repositories/HostedGameRepository';
 import { AuthenticatedPlayer } from '../middlewares';
 import HttpError from '../HttpError';
 import { Body, Get, JsonController, Param, Post, QueryParam } from 'routing-controllers';
-import Player from '../../../../shared/app/models/Player';
-import Move from '../../../../shared/app/models/Move';
+import { Player, Move, HostedGameOptions } from '../../../../shared/app/models';
 import { Service } from 'typedi';
-import { normalize } from '../../../../shared/app/serializer';
-import { GameOptionsData, sanitizeGameOptions } from '../../../../shared/app/GameOptions';
-import { FindAIError, findAIOpponent } from '../../../services/AIManager';
+import { Expose } from '../../../../shared/app/class-transformer-custom';
+import { IsBoolean } from 'class-validator';
+
+class AnswerUndoBody
+{
+    @Expose()
+    @IsBoolean()
+    accept: boolean;
+}
 
 @JsonController()
 @Service()
@@ -24,11 +29,11 @@ export default class GameController
         @QueryParam('fromGamePublicId') fromGamePublicId: string,
     ) {
         if (undefined === type || 'lobby' === type) {
-            return normalize(await this.hostedGameRepository.getLobbyGames());
+            return await this.hostedGameRepository.getLobbyGames();
         }
 
         if ('ended' === type) {
-            return normalize(await this.hostedGameRepository.getEndedGames(take ?? 20, fromGamePublicId));
+            return await this.hostedGameRepository.getEndedGames(take ?? 20, fromGamePublicId);
         }
 
         throw new HttpError(400, 'Unexpected ?type= value');
@@ -44,36 +49,39 @@ export default class GameController
             throw new HttpError(404, 'Game not found');
         }
 
-        return normalize(game);
+        return game;
     }
 
     @Post('/api/games')
     async create(
         @AuthenticatedPlayer() host: Player,
-        @Body() gameOptions: GameOptionsData,
+        @Body() gameOptions: HostedGameOptions,
     ) {
-        gameOptions = sanitizeGameOptions(gameOptions);
-        let opponent: null | Player = null;
-
         try {
-            if ('ai' === gameOptions.opponent.type) {
-                opponent = await findAIOpponent(gameOptions);
-
-                if (null === opponent) {
-                    throw new HttpError(400, 'No matching AI found');
-                }
-            }
+            const hostedGame = await this.hostedGameRepository.createGame(host, gameOptions);
+            return hostedGame.toData();
         } catch (e) {
-            if (e instanceof FindAIError) {
+            if (e instanceof GameError) {
                 throw new HttpError(400, e.message);
             }
-
             throw e;
         }
+    }
 
-        const hostedGame = await this.hostedGameRepository.createGame(host, gameOptions, opponent);
-
-        return normalize(hostedGame.toData());
+    @Post('/api/games/:publicId/rematch')
+    async rematch(
+        @Param('publicId') publicId: string,
+        @AuthenticatedPlayer() host: Player,
+    ) {
+        try {
+            const hostedGame = await this.hostedGameRepository.rematchGame(host, publicId);
+            return hostedGame.toData();
+        } catch (e) {
+            if (e instanceof GameError) {
+                throw new HttpError(400, e.message);
+            }
+            throw e;
+        }
     }
 
     @Post('/api/games/:publicId/join')
@@ -95,6 +103,31 @@ export default class GameController
         @Body() move: Move,
     ) {
         const result = await this.hostedGameRepository.playerMove(player, publicId, move);
+
+        if (true !== result) {
+            throw new HttpError(400, result);
+        }
+    }
+
+    @Post('/api/games/:publicId/ask-undo')
+    async askUndo(
+        @AuthenticatedPlayer() player: Player,
+        @Param('publicId') publicId: string,
+    ) {
+        const result = await this.hostedGameRepository.playerAskUndo(player, publicId);
+
+        if (true !== result) {
+            throw new HttpError(400, result);
+        }
+    }
+
+    @Post('/api/games/:publicId/answer-undo')
+    async answerUndo(
+        @AuthenticatedPlayer() player: Player,
+        @Param('publicId') publicId: string,
+        @Body() answerUndoBody: AnswerUndoBody,
+    ) {
+        const result = await this.hostedGameRepository.playerAnswerUndo(player, publicId, answerUndoBody.accept);
 
         if (true !== result) {
             throw new HttpError(400, result);

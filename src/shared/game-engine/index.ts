@@ -1,8 +1,8 @@
 import Board, { BOARD_DEFAULT_SIZE } from './Board';
 import Game from './Game';
 import IllegalMove from './IllegalMove';
-import Move from './Move';
-import { PlayerIndex, Outcome } from './Types';
+import Move, { SpecialMoveType } from './Move';
+import { PlayerIndex } from './Types';
 import { calcRandomMove } from './randomBot';
 
 export {
@@ -16,13 +16,5 @@ export {
 
 export type {
     PlayerIndex,
-};
-
-export const outcomeToString = (outcome: Outcome): string => {
-    switch (outcome) {
-        case null: return 'the game';
-        case 'resign': return 'by resignation';
-        case 'time': return 'by time';
-        case 'forfeit': return 'by forfeit';
-    }
+    SpecialMoveType,
 };

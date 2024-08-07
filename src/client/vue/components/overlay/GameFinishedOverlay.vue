@@ -1,17 +1,12 @@
 <script setup lang="ts">
 /* eslint-env browser */
-import { gameToSGF } from '../../../../shared/game-engine/SGF';
-import { useOverlayMeta } from 'unoverlay-vue';
-import { downloadString } from '../../../services/fileDownload';
-import { gameToHexworldLink } from '../../../../shared/app/hexworld';
-import { BIconRepeat, BIconDownload, BIconBoxArrowUpRight } from 'bootstrap-icons-vue';
-import AppPseudo from '../AppPseudo.vue';
 import { PropType } from 'vue';
+import { usePrograms } from '@overlastic/vue';
+import AppPseudo from '../AppPseudo.vue';
 import Player from '../../../../shared/app/models/Player';
-import { Game, outcomeToString } from '../../../../shared/game-engine';
-import { pseudoString } from '../../../../shared/app/pseudoUtils';
+import { Game } from '../../../../shared/game-engine';
 
-const { visible, confirm } = useOverlayMeta();
+const { visible, resolve } = usePrograms();
 
 const props = defineProps({
     game: {
@@ -21,89 +16,47 @@ const props = defineProps({
     players: {
         type: Array as PropType<Player[]>,
         required: true,
-    },
-    rematch: {
-        type: Function,
-        required: false,
-    },
+    }
 });
 
-const { players, game, rematch } = props;
+const { players, game } = props;
 
 const winner: null | Player = game.isCanceled()
     ? null
     : players[game.getStrictWinner()]
 ;
 
-/*
- * SGF download
- */
-const downloadSGF = (): void => {
-    const filename = [
-        'hex',
-        game.getStartedAt().toISOString().substring(0, 10),
-        pseudoString(players[0], 'slug'),
-        'VS',
-        pseudoString(players[1], 'slug'),
-    ].join('-') + '.sgf';
-
-    downloadString(gameToSGF(game, {
-        PB: pseudoString(players[0], 'pseudo'),
-        PW: pseudoString(players[1], 'pseudo'),
-    }), filename);
-};
-
 </script>
 
 <template>
     <div v-if="visible">
-        <div class="modal d-block" @click="confirm()">
+        <div class="modal d-block" @click="resolve()">
             <div class="modal-dialog" @click="e => e.stopPropagation()">
                 <form class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Game finished</h5>
-                        <button type="button" class="btn-close" @click="confirm()"></button>
+                        <h5 class="modal-title">{{ $t('game_finished_overlay.title') }}</h5>
+                        <button type="button" class="btn-close" @click="resolve()"></button>
                     </div>
                     <div class="modal-body text-center lead">
                         <p v-if="null !== winner">
-                            <AppPseudo
-                                :player="winner"
-                                is="strong"
-                                :classes="0 === game.getStrictWinner() ? 'text-danger' : 'text-primary'"
-                            />
-                            won {{ outcomeToString(game.getOutcome()) }}!
+                            <i18next :translation="$t('player_won_by.' + (game.getOutcome() ?? 'default'))">
+                                <template #player>
+                                    <AppPseudo
+                                        :player="winner"
+                                        is="strong"
+                                        :classes="0 === game.getStrictWinner() ? 'text-danger' : 'text-primary'"
+                                    />
+                                </template>
+                            </i18next>
                         </p>
-                        <p v-else>Game has been canceled.</p>
+                        <p v-else>{{ $t('game_has_been_canceled') }}</p>
                     </div>
                     <div class="modal-footer justify-content-center">
                         <button
-                            v-if="rematch"
-                            type="button"
-                            class="btn btn-primary"
-                            @click="confirm(); rematch();"
-                        ><BIconRepeat /> Rematch</button>
-
-                        <button
                             type="button"
                             class="btn btn-outline-primary"
-                            @click="confirm()"
-                        >Close</button>
-                    </div>
-                    <div class="modal-footer">
-                        <p>Review game:</p>
-
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-outline-primary"
-                            @click="downloadSGF();"
-                        ><BIconDownload /> SGF</button>
-
-                        <a
-                            type="button"
-                            class="btn btn-sm btn-outline-primary"
-                            target="_blank"
-                            :href="gameToHexworldLink(game)"
-                        ><BIconBoxArrowUpRight/> <img src="/images/hexworld-icon.png" alt="HexWorld icon" height="18" /> HexWorld</a>
+                            @click="resolve()"
+                        >{{ $t('close') }}</button>
                     </div>
                 </form>
             </div>

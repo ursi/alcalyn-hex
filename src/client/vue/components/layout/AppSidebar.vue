@@ -15,22 +15,22 @@ const {
 <template>
     <div>
         <AppTournamentCard
-            name="Hex Monthly 16"
-            :start-date="new Date('2024-04-20T17:00:00Z')"
-            register-link="https://challonge.com/hex_monthly_16"
+            name="Hex Monthly 19"
+            :startDate="new Date('2024-07-20T17:00:00Z')"
+            registerLink="https://challonge.com/hex_monthly_19"
         />
         <AppTournamentCard
-            name="Hex Monthly 17"
-            :start-date="new Date('2024-05-18T17:00:00Z')"
-            register-link="https://challonge.com/hex_monthly_17"
+            name="Hex Monthly 20"
+            :startDate="new Date('2024-08-17T17:00:00Z')"
+            registerLink="https://challonge.com/hex_monthly_20"
         />
         <AppTournamentCard
-            name="Hex Monthly 18"
-            :start-date="new Date('2024-06-15T17:00:00Z')"
-            register-link="https://challonge.com/hex_monthly_18"
+            name="Hex Monthly 21"
+            :startDate="new Date('2024-09-21T17:00:00Z')"
+            registerLink="https://challonge.com/hex_monthly_21"
         />
 
-        <h3>Online ({{ null === totalPlayers ? '…' : totalPlayers}})</h3>
+        <h3>{{ $t('n_online_players', { n: null === totalPlayers ? '…' : totalPlayers }) }}</h3>
 
         <p
             v-for="player in players"
@@ -41,7 +41,7 @@ const {
                 class="online-status-icon text-success"
                 aria-hidden="true"
             />
-            <AppPseudo :player="player" />
+            <AppPseudo rating :player="player" />
         </p>
     </div>
 </template>

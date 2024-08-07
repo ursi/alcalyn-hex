@@ -10,26 +10,35 @@ export const bindTimeControlToGame = (game: Game, timeControl: AbstractTimeContr
     game.prependListener('played', (move, moveIndex, byPlayerIndex) => {
         // Start time control on first move
         if (timeControl.getState() === 'ready') {
-            timeControl.start();
+            timeControl.start(move.getPlayedAt());
         }
 
-        timeControl.push(byPlayerIndex);
+        timeControl.push(byPlayerIndex, move.getPlayedAt());
     });
 
-    game.prependListener('ended', () => {
-        timeControl.finish();
+    game.prependListener('ended', (winner, outcome, date) => {
+        timeControl.finish(date);
     });
 
-    const onElapsed = (playerLostByTime: PlayerIndex) => {
+    game.prependListener('canceled', (date) => {
+        timeControl.finish(date);
+    });
+
+    // When instanciating a game from data, but chrono elapsed before instanciating (i.e while offline)
+    const onElapsed = (playerLostByTime: PlayerIndex, date: Date) => {
         if (playerLostByTime !== game.getCurrentPlayerIndex()) {
             throw new Error('player lose by time is not the one playing…');
         }
 
-        game.loseByTime();
+        if (game.getMovesHistory().length < 2) {
+            game.cancel(date);
+        } else {
+            game.loseByTime(date);
+        }
     };
 
     if ('elapsed' === timeControl.getState()) {
-        onElapsed(timeControl.getStrictElapsedPlayer());
+        onElapsed(timeControl.getStrictElapsedPlayer(), timeControl.getStrictElapsedAt());
     } else {
         timeControl.on('elapsed', onElapsed);
     }

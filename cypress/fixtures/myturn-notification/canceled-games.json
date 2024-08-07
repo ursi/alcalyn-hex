@@ -1,6 +1,6 @@
 [
     {
-        "id": "40c551d0-e9a4-4e6d-9bf3-44a9e9523828",
+        "publicId": "40c551d0-e9a4-4e6d-9bf3-44a9e9523828",
         "host": {
             "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
             "pseudo": "8201",
@@ -8,17 +8,19 @@
             "isGuest": true,
             "isBot": false
         },
-        "players": [
+        "hostedGameToPlayers": [
             {
-                "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
-                "pseudo": "8201",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": false
+                "player": {
+                    "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
+                    "pseudo": "8201",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": false
+                }
             }
         ],
         "timeControl": {
-            "type": "absolute",
+            "type": "fischer",
             "state": "over",
             "players": [
                 {
@@ -36,9 +38,9 @@
                 "type": "player"
             },
             "timeControl": {
-                "type": "absolute",
+                "type": "fischer",
                 "options": {
-                    "secondsPerPlayer": 900
+                    "initialTime": 900000
                 }
             }
         },
@@ -47,7 +49,7 @@
         "state": "canceled"
     },
     {
-        "id": "c1db33be-6134-4185-a8ac-3a02f0ae2376",
+        "publicId": "c1db33be-6134-4185-a8ac-3a02f0ae2376",
         "host": {
             "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
             "pseudo": "8201",
@@ -55,31 +57,35 @@
             "isGuest": true,
             "isBot": false
         },
-        "players": [
+        "hostedGameToPlayers": [
             {
-                "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
-                "pseudo": "8201",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": false
+                "player": {
+                    "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
+                    "pseudo": "8201",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": false
+                }
             },
             {
-                "publicId": "remote-api|037ccabe-8aca-4f05-8828-cc41cf18f0c3",
-                "pseudo": "Mohex",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": true
+                "player": {
+                    "publicId": "remote-api|037ccabe-8aca-4f05-8828-cc41cf18f0c3",
+                    "pseudo": "Mohex",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": true
+                }
             }
         ],
         "timeControl": {
-            "type": "absolute",
+            "type": "fischer",
             "state": "over",
             "players": [
                 {
-                    "totalRemainingTime": 863.72
+                    "totalRemainingTime": 863720
                 },
                 {
-                    "totalRemainingTime": 895.439
+                    "totalRemainingTime": 895439
                 }
             ]
         },
@@ -90,9 +96,9 @@
                 "type": "ai"
             },
             "timeControl": {
-                "type": "absolute",
+                "type": "fischer",
                 "options": {
-                    "secondsPerPlayer": 900
+                    "initialTime": 900000
                 }
             }
         },
@@ -208,23 +214,10 @@
             "endedAt": "2023-12-20T22:19:03.033Z"
         },
         "chatMessages": [],
-        "state": "ended",
-        "__meta": {
-            "values": {
-                "gameData.startedAt": [
-                    "Date"
-                ],
-                "gameData.lastMoveAt": [
-                    "Date"
-                ],
-                "gameData.endedAt": [
-                    "Date"
-                ]
-            }
-        }
+        "state": "ended"
     },
     {
-        "id": "a8a516cc-86e2-4057-bffd-4aef17f69cb3",
+        "publicId": "a8a516cc-86e2-4057-bffd-4aef17f69cb3",
         "host": {
             "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
             "pseudo": "8201",
@@ -232,31 +225,35 @@
             "isGuest": true,
             "isBot": false
         },
-        "players": [
+        "hostedGameToPlayers": [
             {
-                "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
-                "pseudo": "8201",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": false
+                "player": {
+                    "publicId": "1f21396d-3848-4f59-825a-d53ca674a809",
+                    "pseudo": "8201",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": false
+                }
             },
             {
-                "publicId": "remote-api|0c8d8d83-926e-45dd-ba73-fd541bdb3ec7",
-                "pseudo": "Mohex",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": true
+                "player": {
+                    "publicId": "remote-api|0c8d8d83-926e-45dd-ba73-fd541bdb3ec7",
+                    "pseudo": "Mohex",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": true
+                }
             }
         ],
         "timeControl": {
-            "type": "absolute",
+            "type": "fischer",
             "state": "over",
             "players": [
                 {
-                    "totalRemainingTime": 741.051
+                    "totalRemainingTime": 741051
                 },
                 {
-                    "totalRemainingTime": 892.436
+                    "totalRemainingTime": 892436
                 }
             ]
         },
@@ -267,9 +264,9 @@
                 "type": "ai"
             },
             "timeControl": {
-                "type": "absolute",
+                "type": "fischer",
                 "options": {
-                    "secondsPerPlayer": 900
+                    "initialTime": 900000
                 }
             }
         },
@@ -655,23 +652,10 @@
             "endedAt": "2023-12-20T22:22:00.704Z"
         },
         "chatMessages": [],
-        "state": "ended",
-        "__meta": {
-            "values": {
-                "gameData.startedAt": [
-                    "Date"
-                ],
-                "gameData.lastMoveAt": [
-                    "Date"
-                ],
-                "gameData.endedAt": [
-                    "Date"
-                ]
-            }
-        }
+        "state": "ended"
     },
     {
-        "id": "a668e147-fce0-48ea-8f22-c0d3c8b1b4e9",
+        "publicId": "a668e147-fce0-48ea-8f22-c0d3c8b1b4e9",
         "host": {
             "publicId": "0808f397-9e12-45af-bd5b-42885fe36212",
             "pseudo": "2810",
@@ -679,31 +663,35 @@
             "isGuest": true,
             "isBot": false
         },
-        "players": [
+        "hostedGameToPlayers": [
             {
-                "publicId": "0808f397-9e12-45af-bd5b-42885fe36212",
-                "pseudo": "2810",
-                "slug": "slug",
-                "isGuest": true,
-                "isBot": false
+                "player": {
+                    "publicId": "0808f397-9e12-45af-bd5b-42885fe36212",
+                    "pseudo": "2810",
+                    "slug": "slug",
+                    "isGuest": true,
+                    "isBot": false
+                }
             },
             {
-                "publicId": "remote-api|db4a2c11-7cfb-409a-8872-1f4a5a5e6292",
-                "pseudo": "Mohex",
-                "slug": "slug",
-                "isGuest": false,
-                "isBot": true
+                "player": {
+                    "publicId": "remote-api|db4a2c11-7cfb-409a-8872-1f4a5a5e6292",
+                    "pseudo": "Mohex",
+                    "slug": "slug",
+                    "isGuest": false,
+                    "isBot": true
+                }
             }
         ],
         "timeControl": {
-            "type": "absolute",
+            "type": "fischer",
             "state": "over",
             "players": [
                 {
-                    "totalRemainingTime": 817.285
+                    "totalRemainingTime": 817285
                 },
                 {
-                    "totalRemainingTime": 880.992
+                    "totalRemainingTime": 880992
                 }
             ]
         },
@@ -714,9 +702,9 @@
                 "type": "ai"
             },
             "timeControl": {
-                "type": "absolute",
+                "type": "fischer",
                 "options": {
-                    "secondsPerPlayer": 900
+                    "initialTime": 900000
                 }
             }
         },
@@ -907,19 +895,6 @@
             "endedAt": "2023-12-21T06:19:40.523Z"
         },
         "chatMessages": [],
-        "state": "ended",
-        "__meta": {
-            "values": {
-                "gameData.startedAt": [
-                    "Date"
-                ],
-                "gameData.lastMoveAt": [
-                    "Date"
-                ],
-                "gameData.endedAt": [
-                    "Date"
-                ]
-            }
-        }
+        "state": "ended"
     }
 ]

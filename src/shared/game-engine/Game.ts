@@ -1,7 +1,9 @@
 import { IllegalMove, PlayerIndex, Move, BOARD_DEFAULT_SIZE } from '.';
 import { TypedEmitter } from 'tiny-typed-emitter';
 import Board from './Board';
-import { GameData, Outcome } from './Types';
+import { Coords, Outcome } from './Types';
+import { GameData } from './normalization';
+import IllegalUndo from './IllegalUndo';
 
 type GameEvents = {
     /**
@@ -14,12 +16,21 @@ type GameEvents = {
     /**
      * Game have been finished.
      */
-    ended: (winner: PlayerIndex, outcome: Outcome) => void;
+    ended: (winner: PlayerIndex, outcome: Outcome, date: Date) => void;
 
     /**
      * Game has been canceled, so game is over, but no winner.
      */
-    canceled: () => void;
+    canceled: (date: Date) => void;
+
+    /**
+     * Moves have been undone.
+     *
+     * @param undoneMoves List of moves that have been undone.
+     *                    First one is the first undone, so the latest played one.
+     *                    So A, B, C, undone 2 moves will make: [C, B]
+     */
+    undo: (undoneMoves: Move[]) => void;
 };
 
 export default class Game extends TypedEmitter<GameEvents>
@@ -123,6 +134,14 @@ export default class Game extends TypedEmitter<GameEvents>
     }
 
     /**
+     * Returns move history as "a1 swap-pieces b4 c5 ..."
+     */
+    getMovesHistoryAsString(): string
+    {
+        return Move.movesAsString(this.movesHistory);
+    }
+
+    /**
      * @throws IllegalMove on invalid move.
      */
     checkMove(move: Move, byPlayerIndex: PlayerIndex): void
@@ -131,16 +150,38 @@ export default class Game extends TypedEmitter<GameEvents>
             throw new IllegalMove(move, 'Game is finished');
         }
 
-        if (!this.board.containsCoords(move.row, move.col)) {
-            throw new IllegalMove(move, 'Cell outside board');
-        }
-
         if (this.currentPlayerIndex !== byPlayerIndex) {
             throw new IllegalMove(move, 'Not your turn');
         }
 
-        if (!this.board.isEmpty(move.row, move.col) && !this.isSwapPiecesMove(move, byPlayerIndex)) {
-            throw new IllegalMove(move, 'This cell is already occupied');
+        switch (move.getSpecialMoveType()) {
+            case undefined:
+                if (!this.board.containsCoords(move.row, move.col)) {
+                    throw new IllegalMove(move, 'Cell outside board');
+                }
+
+                if (!this.board.isEmpty(move.row, move.col)) {
+                    throw new IllegalMove(move, 'This cell is already occupied');
+                }
+
+                break;
+
+            case 'swap-pieces':
+                if (!this.allowSwap) {
+                    throw new IllegalMove(move, 'Cannot swap, swap rule is disabled');
+                }
+
+                if (!this.canSwapNow()) {
+                    throw new IllegalMove(move, 'Cannot swap now');
+                }
+
+                break;
+
+            case 'pass':
+                break;
+
+            default:
+                throw new IllegalMove(move, `Unknown move special type: "${move.getSpecialMoveType()}"`);
         }
     }
 
@@ -153,19 +194,33 @@ export default class Game extends TypedEmitter<GameEvents>
     {
         this.checkMove(move, byPlayerIndex);
 
-        if (this.isSwapPiecesMove(move, byPlayerIndex)) {
-            this.doSwapPieces(move, byPlayerIndex);
-            return;
+        switch (move.getSpecialMoveType()) {
+            case 'swap-pieces': {
+                const swapCoords = this.getSwapCoords(false)!;
+                const { swapped, mirror } = swapCoords;
+
+                this.board.setCell(swapped.row, swapped.col, null);
+                this.board.setCell(mirror.row, mirror.col, byPlayerIndex);
+                break;
+            }
+
+            case undefined:
+                this.board.setCell(move.row, move.col, byPlayerIndex);
+                break;
+
+            case 'pass':
+                break;
+
+            default:
+                throw new IllegalMove(move, `Unknown move special type: "${move.getSpecialMoveType()}"`);
         }
 
-        this.board.setCell(move.row, move.col, byPlayerIndex);
-
         this.movesHistory.push(move);
-        this.lastMoveAt = new Date();
+        this.lastMoveAt = move.getPlayedAt();
 
         // Naively check connection on every move played
         if (this.board.hasPlayerConnection(byPlayerIndex)) {
-            this.setWinner(byPlayerIndex, null);
+            this.setWinner(byPlayerIndex, null, move.getPlayedAt());
         } else {
             this.changeCurrentPlayer();
         }
@@ -174,7 +229,11 @@ export default class Game extends TypedEmitter<GameEvents>
 
         // Emit "ended" event after "played" event to keep order between events.
         if (this.hasWinner()) {
-            this.emit('ended', this.getStrictWinner(), null);
+            if (null === this.endedAt) {
+                throw new Error('Ended at expected to be set');
+            }
+
+            this.emit('ended', this.getStrictWinner(), null, this.endedAt);
         }
     }
 
@@ -192,64 +251,177 @@ export default class Game extends TypedEmitter<GameEvents>
     {
         return this.allowSwap
             && 1 === this.movesHistory.length
-        ;
-    }
-
-    hasSwapMove(): boolean
-    {
-        return this.allowSwap
-            && this.movesHistory.length >= 2
-            && (this.getFirstMove() as Move).hasSameCoordsAs(this.getSecondMove() as Move)
+            && 'pass' !== this.movesHistory[0].getSpecialMoveType()
         ;
     }
 
     /**
-     * Whether a move is actually a swap-pieces move.
+     * Returns whether there is a swap move in this game history
      */
-    isSwapPiecesMove(move: Move, byPlayerIndex: PlayerIndex): boolean
+    hasSwapped(): boolean
     {
-        return this.allowSwap
-            && 1 === byPlayerIndex
-            && this.movesHistory.length === 1
-            && this.getBoard().getCell(move.row, move.col) === 0
-        ;
-    }
-
-    /**
-     * Whether last played move was actually a swap move.
-     * Returns previous move and new move coords.
-     */
-    isLastMoveSwapPieces(): null | { swapped: Move, mirror: Move }
-    {
-        if (this.allowSwap
-            && this.movesHistory.length === 2
-            && this.movesHistory[0].hasSameCoordsAs(this.movesHistory[1])
-        ) {
-            const firstMove = this.getFirstMove() as Move;
-
-            return {
-                swapped: firstMove,
-                mirror: firstMove.cloneMirror(),
-            };
+        if (this.movesHistory.length < 2) {
+            return false;
         }
 
-        return null;
+        return 'swap-pieces' === this.movesHistory[1].getSpecialMoveType();
     }
 
-    private doSwapPieces(move: Move, byPlayerIndex: PlayerIndex): void
+    createMoveOrSwapMove(coords: Coords): Move
     {
-        const swappedMove = this.getFirstMove() as Move;
-        const swappedMoveMirrored = swappedMove.cloneMirror();
+        if (this.canSwapNow() && this.board.getCell(coords.row, coords.col) === 0) {
+            return Move.swapPieces();
+        }
 
-        this.board.setCell(swappedMove.row, swappedMove.col, null);
-        this.board.setCell(swappedMoveMirrored.row, swappedMoveMirrored.col, byPlayerIndex);
+        return new Move(coords.row, coords.col);
+    }
 
-        this.movesHistory.push(move);
-        this.lastMoveAt = new Date();
+    /**
+     * Returns previous move and new move coords.
+     */
+    getSwapCoords(checkIsSwap = true): null | { swapped: Coords, mirror: Coords }
+    {
+        if (checkIsSwap && ('swap-pieces' !== this.getLastMove()?.getSpecialMoveType())) {
+            return null;
+        }
+
+        const firstMove = this.getFirstMove();
+
+        if (!firstMove) {
+            return null;
+        }
+
+        return {
+            swapped: firstMove,
+            mirror: firstMove.cloneMirror(),
+        };
+    }
+
+    /**
+     * @param playerIndex Player who ask for undo
+     *
+     * @throws {IllegalUndo} If not possible to undo with the reason
+     */
+    checkPlayerUndo(playerIndex: PlayerIndex): void
+    {
+        if (this.isEnded()) {
+            throw new IllegalUndo('Game is finished');
+        }
+
+        if (this.movesHistory.length < 1) {
+            throw new IllegalUndo('Cannot undo, no move to undo yet');
+        }
+
+        if (this.movesHistory.length < 2 && 1 === playerIndex) {
+            throw new IllegalUndo('Second player cannot undo his move because he has not played any move yet');
+        }
+    }
+
+    canPlayerUndo(playerIndex: PlayerIndex): true | string
+    {
+        try {
+            this.checkPlayerUndo(playerIndex);
+
+            return true;
+        } catch (e) {
+            if (e instanceof IllegalUndo) {
+                return e.message;
+            }
+
+            throw e;
+        }
+    }
+
+    private doUndoMove(): Move
+    {
+        const lastMove = this.getLastMove();
+
+        if (null === lastMove) {
+            throw new Error('Cannot undo, board is empty');
+        }
+
+        switch (lastMove.getSpecialMoveType()) {
+            case undefined:
+                this.board.setCell(lastMove.row, lastMove.col, null);
+                break;
+
+            case 'swap-pieces': {
+                const firstMove = this.getFirstMove();
+
+                if (null === firstMove) {
+                    throw new Error('Unexpected null first move');
+                }
+
+                this.board.setCell(firstMove.col, firstMove.row, null);
+                this.board.setCell(firstMove.row, firstMove.col, 0);
+                break;
+            }
+        }
 
         this.changeCurrentPlayer();
 
-        this.emit('played', move, this.movesHistory.length - 1, byPlayerIndex, this.getWinner());
+        return this.movesHistory.pop()!;
+    }
+
+    undoMove(): Move
+    {
+        const undoneMove = this.doUndoMove();
+
+        this.emit('undo', [undoneMove]);
+
+        return undoneMove;
+    }
+
+    /**
+     * player undo, moves are undone until it is player's turn again.
+     * So 1 move is undone, or 2 if opponent played, his last move is also undone.
+     */
+    playerUndo(playerIndex: PlayerIndex): Move[]
+    {
+        const undoneMoves = [];
+
+        if (this.movesHistory.length < 2 && 1 === playerIndex) {
+            throw new Error('player 1 cannot undo, player 1 has not played yet');
+        }
+
+        undoneMoves.push(this.doUndoMove());
+
+        if (this.currentPlayerIndex !== playerIndex) {
+            undoneMoves.push(this.doUndoMove());
+        }
+
+        this.emit('undo', undoneMoves);
+
+        return undoneMoves;
+    }
+
+    /**
+     * Returns moves that will be undone if we call playerUndo()
+     */
+    playerUndoDryRun(playerIndex: PlayerIndex): Move[]
+    {
+        const undoneMoves: Move[] = [];
+
+        if (this.movesHistory.length < 2 && 1 === playerIndex) {
+            return undoneMoves;
+        }
+
+        undoneMoves.push(this.movesHistory[this.movesHistory.length - 1]);
+
+        if (((this.movesHistory.length - 1) % 2) !== playerIndex) {
+            undoneMoves.push(this.movesHistory[this.movesHistory.length - 2]);
+        }
+
+        return undoneMoves;
+    }
+
+    pass(byPlayerIndex: PlayerIndex): Move
+    {
+        const passMove = Move.pass();
+
+        this.move(passMove, byPlayerIndex);
+
+        return passMove;
     }
 
     hasWinner(): boolean
@@ -280,17 +452,17 @@ export default class Game extends TypedEmitter<GameEvents>
      * Just update properties, do not emit "ended" event.
      * Should be emitted manually.
      */
-    private setWinner(playerIndex: PlayerIndex, outcome: Outcome = null): void
+    private setWinner(playerIndex: PlayerIndex, outcome: Outcome = null, date: Date): void
     {
         this.winner = playerIndex;
         this.outcome = outcome;
-        this.endedAt = new Date();
+        this.endedAt = date;
     }
 
     /**
      * Change game state by setting a winner and emitting "ended" event.
      */
-    declareWinner(playerIndex: PlayerIndex, outcome: Outcome = null): void
+    declareWinner(playerIndex: PlayerIndex, outcome: Outcome, date: Date): void
     {
         if (null !== this.winner) {
             throw new Error('Cannot set a winner again, there is already a winner');
@@ -300,20 +472,20 @@ export default class Game extends TypedEmitter<GameEvents>
             throw new Error('Cannot set a winner, game is already ended, probably canceled');
         }
 
-        this.setWinner(playerIndex, outcome);
+        this.setWinner(playerIndex, outcome, date);
 
-        this.emit('ended', playerIndex, outcome);
+        this.emit('ended', playerIndex, outcome, date);
     }
 
-    cancel(): void
+    cancel(date: Date): void
     {
         if (this.isEnded()) {
             throw new Error('Cannot cancel, game already ended');
         }
 
-        this.endedAt = new Date();
+        this.endedAt = date;
 
-        this.emit('canceled');
+        this.emit('canceled', date);
     }
 
     isCanceled(): boolean
@@ -329,17 +501,17 @@ export default class Game extends TypedEmitter<GameEvents>
     /**
      * Makes playerIndex resign
      */
-    resign(playerIndex: PlayerIndex): void
+    resign(playerIndex: PlayerIndex, date: Date): void
     {
-        this.declareWinner(0 === playerIndex ? 1 : 0, 'resign');
+        this.declareWinner(0 === playerIndex ? 1 : 0, 'resign', date);
     }
 
     /**
      * Makes current player lose by time
      */
-    loseByTime(): void
+    loseByTime(date: Date): void
     {
-        this.declareWinner(this.otherPlayerIndex(), 'time');
+        this.declareWinner(this.otherPlayerIndex(), 'time', date);
     }
 
     getStartedAt(): Date

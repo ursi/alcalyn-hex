@@ -2,13 +2,13 @@
 import { timeControlToCadencyName, timeControlToString } from '@shared/app/timeControlUtils';
 import { PropType, toRefs } from 'vue';
 import { BIconLightningChargeFill, BIconAlarmFill, BIconCalendar } from 'bootstrap-icons-vue';
-import { GameOptionsData } from '@shared/app/GameOptions';
+import HostedGameOptions from '../../../shared/app/models/HostedGameOptions';
 import { calcAverageSecondsPerMove } from '@shared/app/timeControlUtils';
-import { secondsToDuration } from '@shared/app/timeControlUtils';
+import { msToDuration } from '@shared/app/timeControlUtils';
 
 const props = defineProps({
     gameOptions: {
-        type: Object as PropType<GameOptionsData>,
+        type: Object as PropType<HostedGameOptions>,
         required: true,
     },
 });
@@ -22,11 +22,11 @@ const candency = timeControlToCadencyName(gameOptions.value);
     <span>
         <BIconLightningChargeFill v-if="candency === 'blitz'" class="d-none d-sm-inline" />
         <BIconAlarmFill v-else-if="candency === 'normal'" class="d-none d-sm-inline" />
-        <BIconCalendar v-else-if="candency === 'correspondance'" class="d-none d-sm-inline" />
+        <BIconCalendar v-else-if="candency === 'correspondence'" class="d-none d-sm-inline" />
 
         {{ timeControlToString(gameOptions.timeControl) }}
 
-        <small class="text-body-secondary d-none d-sm-inline">(~{{ secondsToDuration(Math.round(calcAverageSecondsPerMove(gameOptions.timeControl, gameOptions.boardsize)), 1) }}&nbsp;/&nbsp;move)</small>
+        <small class="text-body-secondary d-none d-sm-inline">(~{{ msToDuration(1000 * Math.round(calcAverageSecondsPerMove(gameOptions.timeControl, gameOptions.boardsize)), 1) }}&nbsp;/&nbsp;{{ $t('move') }})</small>
     </span>
 </template>
 

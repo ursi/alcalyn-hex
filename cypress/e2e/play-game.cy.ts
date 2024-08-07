@@ -3,10 +3,10 @@ describe('Play a game to the end', () => {
         cy.visit('/');
         cy.get('.menu-top').contains(/Guest \d+/);
 
-        cy.contains('Play vs AI').click();
+        cy.createAIGameWithRandom(false);
 
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains('Custom')
             .click()
@@ -30,11 +30,9 @@ describe('Play a game to the end', () => {
             clickHistory.push({ x: clientX, y: clientY });
 
             console.log(
-                "cy.get('canvas');\ncy.get('body')\n"
-                    + clickHistory
-                        .map(c => `    .click(${c.x}, ${c.y})`)
-                        .join('\n')
-                    + '\n;\n'
+                clickHistory
+                    .map(c => `cy.play(${c.x}, ${c.y});\n`)
+                    .join('')
                 ,
             );
         };
@@ -42,24 +40,18 @@ describe('Play a game to the end', () => {
 
     it('wins vs cpu on board size 4', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains(/^First$/)
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
 
-        cy.get('canvas');
-        cy.get('body')
-            .click(409, 326)
-            .click(307, 270)
-            .click(603, 329)
-            .click(504, 279)
-            .click(605, 440)
-        ;
+        cy.submitAIGame();
+
+        cy.play(339, 284);
+        cy.play(336, 382);
+        cy.play(254, 236);
+        cy.play(420, 427);
 
         cy.contains('Game finished');
         cy.contains(/Guest \d+ won the game!/);
@@ -67,27 +59,22 @@ describe('Play a game to the end', () => {
 
     it('loses vs cpu on board size 4', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains(/^First$/)
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
 
-        cy.get('canvas');
-        cy.get('body')
-            .click(210, 326)
-            .click(410, 209)
-            .click(509, 145)
-            .click(797, 328)
-            .click(506, 497)
-            .click(601, 205)
-            .click(510, 269)
-            .click(413, 326)
-        ;
+        cy.submitAIGame();
+
+        cy.play(184, 375);
+        cy.play(165, 381);
+        cy.play(77, 328);
+        cy.play(336, 185);
+        cy.play(585, 333);
+        cy.play(254, 236);
+        cy.play(251, 329);
+        cy.play(503, 282);
 
         cy.contains('Game finished');
         cy.contains('Determinist random bot won the game!');
@@ -95,23 +82,18 @@ describe('Play a game to the end', () => {
 
     it('uses swap rule and wins on board size 4', () => {
         cy
-            .contains('Game options')
+            .contains('h5', 'Play vs AI')
             .closest('.modal-content')
             .contains(/^Second$/)
             .click()
-
-            .closest('.modal-content')
-            .contains('Play vs AI')
-            .click()
         ;
 
-        cy.get('canvas');
-        cy.get('body')
-            .click(504, 152)
-            .click(605, 323)
-            .click(607, 208)
-            .click(607, 439)
-        ;
+        cy.submitAIGame();
+
+        cy.play(334, 189);
+        cy.play(339, 382);
+        cy.play(423, 336);
+        cy.play(423, 231);
 
         cy.contains('Game finished');
         cy.contains(/Guest \d+ won the game!/);

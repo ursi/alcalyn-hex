@@ -1,5 +1,5 @@
 {
-    "id": "8b0c8f1b-79da-43c8-997f-c1fc6ea2da33",
+    "publicId": "8b0c8f1b-79da-43c8-997f-c1fc6ea2da33",
     "host": {
         "pseudo": "aa",
         "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
@@ -8,22 +8,26 @@
         "slug": "aa",
         "createdAt": "2024-01-24T16:33:29.586Z"
     },
-    "players": [
+    "hostedGameToPlayers": [
         {
-            "publicId": "determinist-random-bot|d6902ed2-5e33-46f3-998f-3739cb24d50b",
-            "pseudo": "The winner",
-            "slug": "the-winner",
-            "isBot": false,
-            "isGuest": false,
-            "createdAt": "2024-01-24T20:25:06.632Z"
+            "player": {
+                "publicId": "determinist-random-bot|d6902ed2-5e33-46f3-998f-3739cb24d50b",
+                "pseudo": "The winner",
+                "slug": "the-winner",
+                "isBot": false,
+                "isGuest": false,
+                "createdAt": "2024-01-24T20:25:06.632Z"
+            }
         },
         {
-            "pseudo": "aa",
-            "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
-            "isGuest": false,
-            "isBot": false,
-            "slug": "aa",
-            "createdAt": "2024-01-24T16:33:29.586Z"
+            "player": {
+                "pseudo": "aa",
+                "publicId": "cec49907-633e-49cb-b720-7dad6c248753",
+                "isGuest": false,
+                "isBot": false,
+                "slug": "aa",
+                "createdAt": "2024-01-24T16:33:29.586Z"
+            }
         }
     ],
     "timeControl": {
@@ -31,10 +35,10 @@
         "currentPlayer": 1,
         "players": [
             {
-                "totalRemainingTime": 600
+                "totalRemainingTime": 600000
             },
             {
-                "totalRemainingTime": 598.216
+                "totalRemainingTime": 598216
             }
         ]
     },
@@ -48,9 +52,9 @@
         "timeControl": {
             "type": "fischer",
             "options": {
-                "initialSeconds": 600,
-                "incrementSeconds": 5,
-                "maxSeconds": 600
+                "initialTime": 600000,
+                "timeIncrement": 5000,
+                "maxTime": 600000
             }
         }
     },
@@ -133,27 +137,5 @@
     },
     "chatMessages": [],
     "state": "ended",
-    "createdAt": "2024-01-24T20:25:06.632Z",
-    "__meta": {
-        "values": {
-            "host.createdAt": [
-                "Date"
-            ],
-            "opponent.createdAt": [
-                "Date"
-            ],
-            "gameData.startedAt": [
-                "Date"
-            ],
-            "gameData.lastMoveAt": [
-                "Date"
-            ],
-            "gameData.endedAt": [
-                "Date"
-            ],
-            "createdAt": [
-                "Date"
-            ]
-        }
-    }
+    "createdAt": "2024-01-24T20:25:06.632Z"
 }

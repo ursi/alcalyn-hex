@@ -3,8 +3,8 @@
 import { storeToRefs } from 'pinia';
 import { Person, WithContext } from 'schema-dts';
 import useAuthStore from '../../../stores/authStore';
-import { BIconPerson, BIconPersonUp, BIconBoxArrowRight, BIconGear } from 'bootstrap-icons-vue';
-import { HostedGameData } from '@shared/app/Types';
+import { BIconPerson, BIconPersonUp, BIconBoxArrowRight, BIconGear, BIconTrophyFill } from 'bootstrap-icons-vue';
+import HostedGame from '../../../../shared/app/models/HostedGame';
 import Player from '../../../../shared/app/models/Player';
 import { getPlayerGames, getPlayerBySlug, ApiClientError } from '../../../apiClient';
 import { Ref, ref } from 'vue';
@@ -13,11 +13,15 @@ import useLobbyStore from '../../../stores/lobbyStore';
 import HostedGameClient from '../../../HostedGameClient';
 import AppPseudo from '../../components/AppPseudo.vue';
 import AppOnlineStatus from '../../components/AppOnlineStatus.vue';
-import AppPseudoWithOnlineStatusVue from '../../components/AppPseudoWithOnlineStatus.vue';
+import AppTimeControlLabelVue from '../../components/AppTimeControlLabel.vue';
+import AppGameRulesSummary from '@client/vue/components/AppGameRulesSummary.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useJsonLd } from '../../../services/head';
 import { useSeoMeta } from '@unhead/vue';
 import { pseudoString } from '../../../../shared/app/pseudoUtils';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { timeControlToCadencyName } from '@shared/app/timeControlUtils';
+import useServerDateStore from '../../../stores/serverDateStore';
 
 const { slug } = useRoute().params;
 
@@ -65,7 +69,7 @@ const player: Ref<null | Player> = isMe()
     : ref(null)
 ;
 
-const gamesHistory: Ref<null | HostedGameData[]> = ref(null);
+const gamesHistory: Ref<null | HostedGame[]> = ref(null);
 const playerNotFound = ref(false);
 
 (async () => {
@@ -91,6 +95,26 @@ const playerNotFound = ref(false);
  */
 const { hostedGameClients } = storeToRefs(useLobbyStore());
 
+const currentGameComparator = (a: HostedGameClient, b: HostedGameClient): number => {
+    // Correspondence games go after real-time games, then sorted by "started at"
+    const timeA = timeControlToCadencyName(a.getGameOptions());
+    const timeB = timeControlToCadencyName(b.getGameOptions());
+
+    if (timeA !== 'correspondence' && timeB === 'correspondence')
+        return -1;
+
+    if (timeA === 'correspondence' && timeB !== 'correspondence')
+        return 1;
+
+    const startedAtA = a.getHostedGame().gameData?.startedAt;
+    const startedAtB = b.getHostedGame().gameData?.startedAt;
+
+    if (startedAtA != null && startedAtB != null)
+        return startedAtB.getTime() - startedAtA.getTime();
+
+    return 0;
+};
+
 const getCurrentGames = (): HostedGameClient[] => {
     if (null === player.value) {
         return [];
@@ -106,13 +130,13 @@ const getCurrentGames = (): HostedGameClient[] => {
         currentGames.push(hostedGameClient);
     }
 
-    return currentGames;
+    return currentGames.sort(currentGameComparator);
 };
 
 /*
  * Games history
  */
-const hasWon = (game: HostedGameData): boolean => {
+const hasWon = (game: HostedGame): boolean => {
     if (null === player.value) {
         throw new Error('player must be set');
     }
@@ -125,12 +149,12 @@ const hasWon = (game: HostedGameData): boolean => {
         return false;
     }
 
-    const winner = game.players[game.gameData.winner];
+    const winner = game.hostedGameToPlayers[game.gameData.winner].player;
 
     return winner.publicId === player.value?.publicId;
 };
 
-const getOpponent = (game: HostedGameData): Player => {
+const getOpponent = (game: HostedGame): Player => {
     if (null === player.value) {
         throw new Error('player must be set');
     }
@@ -138,11 +162,11 @@ const getOpponent = (game: HostedGameData): Player => {
     let me: null | Player = null;
     let opponent: null | Player = null;
 
-    for (const p of game.players) {
-        if (p.publicId === player.value.publicId) {
-            me = p;
+    for (const p of game.hostedGameToPlayers) {
+        if (p.player.publicId === player.value.publicId) {
+            me = p.player;
         } else {
-            opponent = p;
+            opponent = p.player;
         }
     }
 
@@ -159,7 +183,7 @@ const loadMoreEndedGames = async (): Promise<void> => {
     }
 
     const last = gamesHistory.value[gamesHistory.value.length - 1];
-    const games = await getPlayerGames(player.value.publicId, 'ended', last?.id ?? null);
+    const games = await getPlayerGames(player.value.publicId, 'ended', last?.publicId ?? null);
 
     for (let i = 0; i < games.length; ++i) {
         gamesHistory.value.push(games[i]);
@@ -179,6 +203,11 @@ const clickLogout = async () => {
         },
     });
 };
+
+/**
+ * ping and date shift
+ */
+const { pingTime, medianShift } = storeToRefs(useServerDateStore());
 </script>
 
 <template>
@@ -189,24 +218,32 @@ const clickLogout = async () => {
                 <AppOnlineStatus v-if="player" :player="player" class="player-status" />
             </div>
             <div>
-                <h2><AppPseudo v-if="player" :player="player" /><template v-else>…</template></h2>
+                <h2><AppPseudo v-if="player" rating="full" :player="player" /><template v-else>…</template></h2>
 
-                <p v-if="player && !player.isGuest">Account created on {{ player?.createdAt
-                    ? format(player?.createdAt, 'd MMMM Y')
-                    : '…'
+                <p v-if="player && !player.isGuest" class="mb-0">{{ $t('account_created_on', { date: player?.createdAt
+                    ? format(player?.createdAt, 'd MMMM y')
+                    : '…' })
                 }}</p>
 
-                <div v-if="isMe() && null !== player" class="player-btns">
+                <p v-if="isMe()" class="text-body-secondary">
+                    <small>
+                        {{ $t('ping.ping_ms', { ms: pingTime }) }}
+                        –
+                        {{ $t('ping.date_shift_ms', { ms: medianShift }) }}
+                    </small>
+                </p>
+
+                <div v-if="isMe() && null !== player" class="player-btns mt-3">
                     <template v-if="player.isGuest">
                         <router-link
                             :to="{ name: 'signup' }"
                             class="btn btn-success"
-                        ><BIconPersonUp /> Create account</router-link>
+                        ><BIconPersonUp /> {{ $t('create_account') }}</router-link>
 
                         <router-link
                             :to="{ name: 'login' }"
                             class="btn btn-primary"
-                        >Log in</router-link>
+                        >{{ $t('log_in') }}</router-link>
                     </template>
 
                     <template v-else>
@@ -214,77 +251,112 @@ const clickLogout = async () => {
                             type="button"
                             class="btn btn-sm btn-outline-warning"
                             @click="clickLogout()"
-                        >Log out <BIconBoxArrowRight /></button>
+                        >{{ $t('log_out') }} <BIconBoxArrowRight /></button>
                     </template>
 
                     <router-link
                         :to="{ name: 'settings' }"
                         class="btn btn-sm btn-outline-primary"
-                    ><BIconGear /> Settings</router-link>
+                    ><BIconGear /> {{ $t('player_settings.title') }}</router-link>
                 </div>
             </div>
         </div>
 
-        <h3 class="mt-4">Current games</h3>
+        <h3 class="mt-4">{{ $t('player_current_games') }}</h3>
 
-        <table v-if="player" class="table">
-            <tbody>
-                <tr
-                    v-for="game in getCurrentGames()"
-                    :key="game.getId()"
-                >
-                    <td class="ps-0">
-                        <router-link
-                            :to="{ name: 'online-game', params: { gameId: game.getId() } }"
+        <div v-if="player" class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col"></th>
+                        <th scope="col"></th>
+                        <th scope="col">{{ $t('game.opponent') }}</th>
+                        <th scope="col">{{ $t('game.size') }}</th>
+                        <th scope="col">{{ $t('game.time_control') }}</th>
+                        <th scope="col">{{ $t('game.rules') }}</th>
+                        <th scope="col">{{ $t('game.started') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="game in getCurrentGames()"
+                        :key="game.getId()"
+                    >
+                        <td class="ps-0">
+                            <router-link
+                                :to="{ name: 'online-game', params: { gameId: game.getId() } }"
+                                class="btn btn-sm btn-link"
+                            >{{ $t('game.watch') }}</router-link>
+                        </td>
+                        <td>
+                            <span v-if="game.isRanked()" class="text-warning"><BIconTrophyFill /> <span class="d-none d-md-inline">{{ $t('ranked') }}</span></span>
+                        </td>
+                        <td><AppPseudo rating onlineStatus :player="(game.getOtherPlayer(player) as Player)" /></td>
+                        <td>{{ game.getHostedGame().gameOptions.boardsize }}</td>
+                        <td><AppTimeControlLabelVue :gameOptions="game.getGameOptions()" /></td>
+                        <td><AppGameRulesSummary :gameOptions="game.getGameOptions()" /></td>
+                        <td>{{
+                            formatDistanceToNowStrict(game.getHostedGame().gameData?.startedAt ?? 0, { addSuffix: true })
+                        }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3>{{ $t('player_game_history') }}</h3>
+
+        <div v-if="gamesHistory && gamesHistory.length > 0" class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col"></th>
+                        <th scope="col"></th>
+                        <th scope="col">{{ $t('game.outcome') }}</th>
+                        <th scope="col">{{ $t('game.opponent') }}</th>
+                        <th scope="col">{{ $t('game.size') }}</th>
+                        <th scope="col">{{ $t('game.time_control') }}</th>
+                        <th scope="col">{{ $t('game.rules') }}</th>
+                        <th scope="col">{{ $t('game.finished') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="game in gamesHistory"
+                        :key="game.publicId"
+                    >
+                        <td class="ps-0">
+                            <router-link
+                                :to="{ name: 'online-game', params: { gameId: game.publicId } }"
+                                class="btn btn-sm btn-link"
+                            >{{ $t('game.review') }}</router-link>
+                        </td>
+                        <td>
+                            <span v-if="game.gameOptions.ranked" class="text-warning"><BIconTrophyFill /> <span class="d-none d-md-inline">{{ $t('ranked') }}</span></span>
+                        </td>
+                        <td v-if="hasWon(game)" style="width: 7em" class="text-success">{{ $t('outcome.win') }}</td>
+                        <td v-else style="width: 7em" class="text-danger">{{ $t('outcome.' + (game?.gameData?.outcome ?? 'loss')) }}</td>
+                        <td><AppPseudo rating onlineStatus :player="getOpponent(game)" /></td>
+                        <td>{{ game.gameOptions.boardsize }}</td>
+                        <td><AppTimeControlLabelVue :gameOptions="game.gameOptions" /></td>
+                        <td><AppGameRulesSummary :gameOptions="game.gameOptions" /></td>
+                        <td>{{
+                            formatDistanceToNowStrict(game.gameData?.endedAt ?? 0, { addSuffix: true })
+                        }}</td>
+                    </tr>
+                    <tr colspan="2">
+                        <button
+                            role="button"
                             class="btn btn-sm btn-link"
-                        >Watch</router-link>
-                    </td>
-                    <td>
-                        <span class="me-2">vs </span>
-                        <AppPseudoWithOnlineStatusVue
-                            :player="(game.getOtherPlayer(player) as Player)"
-                        />
-                    </td>
-                    <td class="text-end">{{ game.getHostedGameData().gameOptions.boardsize }}</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <h3>Game history</h3>
-
-        <table class="table table-sm table-borderless">
-            <tbody>
-                <tr
-                    v-for="game in gamesHistory"
-                    :key="game.id"
-                >
-                    <td class="ps-0">
-                        <router-link
-                            :to="{ name: 'online-game', params: { gameId: game.id } }"
-                            class="btn btn-sm btn-link"
-                        >Review</router-link>
-                    </td>
-                    <td>
-                        <span class="me-2 text-success" v-if="hasWon(game)">won against </span>
-                        <span class="me-2 text-danger" v-else>lost against </span>
-                        <AppPseudoWithOnlineStatusVue
-                            :player="getOpponent(game)"
-                        />
-                    </td>
-                </tr>
-                <tr colspan="2">
-                    <button
-                        role="button"
-                        class="btn btn-sm btn-link"
-                        @click="() => loadMoreEndedGames()"
-                    >Load more</button>
-                </tr>
-            </tbody>
-        </table>
+                            @click="() => loadMoreEndedGames()"
+                        >{{ $t('load_more') }}</button>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div v-else class="container">
-        <p class="text-center lead mt-2">Looks like there is no such player.</p>
+        <p class="text-center lead mt-2">{{ $t('no_such_player') }}</p>
     </div>
 </template>
 
@@ -308,4 +380,7 @@ const clickLogout = async () => {
         top 79%
         left 79%
         font-size 1em
+
+td:first-child, th:first-child
+    width 6em
 </style>

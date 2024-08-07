@@ -5,51 +5,6 @@ import { calcAverageSecondsPerMove } from '../timeControlUtils';
 
 describe('timeControlUtils', () => {
     it('calculates average seconds per move for a given time control and a board size', () => {
-        /**
-         * Simple
-         */
-        assert.strictEqual(
-            calcAverageSecondsPerMove({
-                type: 'simple',
-                options: {
-                    secondsPerMove: 12,
-                },
-            }, 13),
-            12,
-        );
-
-        assert.strictEqual(
-            calcAverageSecondsPerMove({
-                type: 'simple',
-                options: {
-                    secondsPerMove: 12,
-                },
-            }, 7),
-            12,
-        );
-
-        /**
-         * Absolute
-         */
-        assert.strictEqual(
-            calcAverageSecondsPerMove({
-                type: 'absolute',
-                options: {
-                    secondsPerPlayer: 36
-                },
-            }, 6),
-            6,
-        );
-
-        assert.strictEqual(
-            calcAverageSecondsPerMove({
-                type: 'absolute',
-                options: {
-                    secondsPerPlayer: 360
-                },
-            }, 12),
-            15,
-        );
 
         /**
          * Fischer
@@ -58,8 +13,8 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'fischer',
                 options: {
-                    initialSeconds: 300,
-                    incrementSeconds: 10,
+                    initialTime: 300000,
+                    timeIncrement: 10000,
                 },
             }, 6),
             60,
@@ -69,8 +24,8 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'fischer',
                 options: {
-                    initialSeconds: 300,
-                    incrementSeconds: 1,
+                    initialTime: 300000,
+                    timeIncrement: 1000,
                 },
             }, 12),
             13.5,
@@ -80,8 +35,8 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'fischer',
                 options: {
-                    initialSeconds: 0,
-                    incrementSeconds: 1,
+                    initialTime: 0,
+                    timeIncrement: 1000,
                 },
             }, 12),
             1,
@@ -91,7 +46,7 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'fischer',
                 options: {
-                    initialSeconds: 240,
+                    initialTime: 240000,
                 },
             }, 12),
             10,
@@ -104,9 +59,9 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'byoyomi',
                 options: {
-                    initialSeconds: 100,
+                    initialTime: 100000,
                     periodsCount: 2,
-                    periodSeconds: 20,
+                    periodTime: 20000,
                 },
             }, 6),
             40,
@@ -116,9 +71,9 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'byoyomi',
                 options: {
-                    initialSeconds: 300,
+                    initialTime: 300000,
                     periodsCount: 4,
-                    periodSeconds: 10,
+                    periodTime: 10000,
                 },
             }, 12),
             23.75,
@@ -128,9 +83,9 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'byoyomi',
                 options: {
-                    initialSeconds: 0,
+                    initialTime: 0,
                     periodsCount: 1,
-                    periodSeconds: 12,
+                    periodTime: 12000,
                 },
             }, 12),
             12,
@@ -140,9 +95,9 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'byoyomi',
                 options: {
-                    initialSeconds: 0,
+                    initialTime: 0,
                     periodsCount: 3,
-                    periodSeconds: 12,
+                    periodTime: 12000,
                 },
             }, 12),
             13,
@@ -152,9 +107,9 @@ describe('timeControlUtils', () => {
             calcAverageSecondsPerMove({
                 type: 'byoyomi',
                 options: {
-                    initialSeconds: 240,
+                    initialTime: 240000,
                     periodsCount: 0,
-                    periodSeconds: 12,
+                    periodTime: 12000,
                 },
             }, 12),
             10,
