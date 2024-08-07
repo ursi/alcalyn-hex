@@ -21,7 +21,6 @@
         let
           pkgs = import nixpkgs { inherit system; };
           p = pkgs;
-          l = p.lib;
 
           inherit (inputs.shelpers.lib p) eval-shelpers shelp;
 
@@ -115,14 +114,10 @@
           };
 
           checks =
-            let
-              lu = lint-utils.linters.${system};
-              nixOnly = onlyExts [ "nix" ] ./.;
-            in
-            {
-              nix-formatting = lu.nixpkgs-fmt { src = nixOnly; };
-              nix-dce = lu.deadnix { src = nixOnly; };
-              nix-linting = lu.statix { src = nixOnly; };
+            let lu = lint-utils.linters.${system}; in {
+              nix-formatting = lu.nixpkgs-fmt { src = ./.; };
+              nix-dce = lu.deadnix { src = ./.; };
+              nix-linting = lu.statix { src = ./.; };
             };
 
           inherit (shelpers) apps;
