@@ -28,6 +28,7 @@
             eval-shelpers [
               ({ config, ... }: {
                 instructions-order = [ "General" "Yarn" ];
+                root-file = ".git";
                 shelpers."." = {
                   General = {
                     shelp = shelp config;
