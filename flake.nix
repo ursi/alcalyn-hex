@@ -28,7 +28,6 @@
             eval-shelpers [
               ({ config, ... }: {
                 instructions-order = [ "General" ];
-                cache = false;
                 shelpers."." = {
                   General = {
                     shelp = shelp config;
@@ -38,7 +37,7 @@
                     let pg-dir = ".database"; in {
                       "db.create" = {
                         description = "create the local database";
-                        # internal = true;
+                        internal = true;
                         script = ''
                           if [[ -e ${pg-dir} ]]; then
                             echo database has already been created
