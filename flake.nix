@@ -27,12 +27,24 @@
           shelpers =
             eval-shelpers [
               ({ config, ... }: {
-                instructions-order = [ "General" ];
+                instructions-order = [ "General" "Yarn" ];
                 shelpers."." = {
                   General = {
                     shelp = shelp config;
                   };
 
+                  # adding these redundent scripts to make shelp more helpful
+                  Yarn = {
+                    "yarn.lint" = {
+                      description = "yarn lint";
+                      script = ''yarn lint "@1"'';
+                    };
+
+                    "yarn.serve" = {
+                      description = "yarn serve";
+                      script = "yarn serve";
+                    };
+                  };
                   Database =
                     let pg-dir = ".database"; in {
                       "db.create" = {
