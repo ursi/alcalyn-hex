@@ -34,7 +34,7 @@ if (Array.isArray(slug)) {
  */
 const updateMeta = (player: Player): void => {
     useSeoMeta({
-        titleTemplate: title => `${pseudoString(player, 'pseudo')} - ${title}`,
+        title: pseudoString(player, 'pseudo'),
 
         // index only bots (Mohex) profile page.
         // Guest should never be indexed,
@@ -306,7 +306,7 @@ const { pingTime, medianShift } = storeToRefs(useServerDateStore());
         <h3>{{ $t('player_game_history') }}</h3>
 
         <div v-if="gamesHistory && gamesHistory.length > 0" class="table-responsive">
-            <table class="table">
+            <table class="table mb-0">
                 <thead>
                     <tr>
                         <th scope="col"></th>
@@ -340,18 +340,16 @@ const { pingTime, medianShift } = storeToRefs(useServerDateStore());
                         <td><AppTimeControlLabelVue :gameOptions="game.gameOptions" /></td>
                         <td><AppGameRulesSummary :gameOptions="game.gameOptions" /></td>
                         <td>{{
-                            formatDistanceToNowStrict(game.gameData?.endedAt ?? 0, { addSuffix: true })
+                            game.gameData?.endedAt ? format(game.gameData.endedAt, 'd MMMM yyyy p') : '-'
                         }}</td>
-                    </tr>
-                    <tr colspan="2">
-                        <button
-                            role="button"
-                            class="btn btn-sm btn-link"
-                            @click="() => loadMoreEndedGames()"
-                        >{{ $t('load_more') }}</button>
                     </tr>
                 </tbody>
             </table>
+            <button
+                role="button"
+                class="btn btn-sm btn-link"
+                @click="() => loadMoreEndedGames()"
+            >{{ $t('load_more') }}</button>
         </div>
     </div>
 

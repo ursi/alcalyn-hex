@@ -1,26 +1,29 @@
 <script setup lang="ts">
 /* eslint-env browser */
-import GameView from '@client/pixi-board/GameView';
 import useLobbyStore from '@client/stores/lobbyStore';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import AppBoard from '@client/vue/components/AppBoard.vue';
 import ConfirmationOverlay from '@client/vue/components/overlay/ConfirmationOverlay.vue';
 import HostedGameClient from '../../HostedGameClient';
 import { defineOverlay } from '@overlastic/vue';
-import { Ref, onMounted, onUnmounted, watch, watchEffect } from 'vue';
+import { Ref, onUnmounted, watch, watchEffect } from 'vue';
 import useSocketStore from '@client/stores/socketStore';
 import useAuthStore from '@client/stores/authStore';
 import Rooms from '@shared/app/Rooms';
 import { timeControlToCadencyName } from '../../../shared/app/timeControlUtils';
 import { useRoute, useRouter } from 'vue-router';
-import { BIconFlag, BIconXLg, BIconCheck, BIconChatRightText, BIconChatRight, BIconArrowBarLeft, BIconRepeat, BIconArrowCounterclockwise, BIconX } from 'bootstrap-icons-vue';
+import { BIconFlag, BIconXLg, BIconCheck, BIconChatRightText, BIconChatRight, BIconArrowBarLeft, BIconRepeat, BIconArrowCounterclockwise, BIconX, BIconRewind } from 'bootstrap-icons-vue';
 import usePlayerSettingsStore from '../../stores/playerSettingsStore';
 import usePlayerLocalSettingsStore from '../../stores/playerLocalSettingsStore';
 import { storeToRefs } from 'pinia';
+import i18next from 'i18next';
 import { PlayerIndex } from '@shared/game-engine';
 import { useSeoMeta } from '@unhead/vue';
 import AppGameSidebar from '../components/AppGameSidebar.vue';
+import AppConnectionAlert from '../components/AppConnectionAlert.vue';
 import { fromEngineMove } from '../../../shared/app/models/Move';
+import { pseudoString } from '../../../shared/app/pseudoUtils';
+import { CustomizedGameView } from '../../services/CustomizedGameView';
 
 useSeoMeta({
     robots: 'noindex',
@@ -28,15 +31,20 @@ useSeoMeta({
 
 const { gameId } = useRoute().params;
 
-const hostedGameClient = ref<null | HostedGameClient>(null);
+const hostedGameClient: Ref<HostedGameClient | null> = ref(null);
 
-const boardContainer = ref<HTMLElement>();
-let gameView: null | GameView = null; // Cannot be a ref() because crash when toggle coords and hover board
+let gameView: null | CustomizedGameView = null; // Cannot be a ref() because crash when toggle coords and hover board. Also, using .mount() on a ref is very laggy.
+
+/**
+ * When game is loaded, gameView instanciated
+ */
+const gameViewInitialized = ref(false);
 
 if (Array.isArray(gameId)) {
     throw new Error('unexpected array param in gameId');
 }
 
+const socketStore = useSocketStore();
 const lobbyStore = useLobbyStore();
 const { loggedInPlayer } = storeToRefs(useAuthStore());
 const router = useRouter();
@@ -130,11 +138,12 @@ const answerUndo = (accept: boolean): void => {
 
 /*
  * Join/leave game room.
- * Not required if player is already in game,
- * but necessary for watchers to received game updates.
  */
-useSocketStore().joinRoom(Rooms.game(gameId));
-onUnmounted(() => useSocketStore().leaveRoom(Rooms.game(gameId)));
+watchEffect(() => {
+    if (socketStore.connected)
+        socketStore.joinRoom(Rooms.game(gameId));
+});
+onUnmounted(() => socketStore.leaveRoom(Rooms.game(gameId)));
 
 const getLocalPlayerIndex = (): number => {
 
@@ -210,21 +219,18 @@ const initGameView = async () => {
 
     const game = hostedGameClient.value.loadGame();
 
-    if (!boardContainer.value) {
-        throw new Error('Missing element with ref="boardContainer"');
-    }
+    gameView = new CustomizedGameView(game);
 
-    gameView = new GameView(game, boardContainer.value);
+    gameViewInitialized.value = true;
+
+    if (null !== playerSettings.value) {
+        gameView.updateOptionsFromPlayerSettings(playerSettings.value);
+    }
 
     await gameView.ready();
 
-    if (null !== playerSettings.value) {
-        gameView.setDisplayCoords(playerSettings.value.showCoords);
-        gameView.setPreferredOrientations({
-            landscape: playerSettings.value.orientationLandscape,
-            portrait: playerSettings.value.orientationPortrait,
-        });
-    }
+    // Should be after setDisplayCoords and setPreferredOrientations to start after redraws
+    gameView.animateWinningPath();
 
     watch(playerSettings, settings => {
         if (null === gameView || null === settings) {
@@ -245,42 +251,54 @@ const initGameView = async () => {
     }
 };
 
+const makeTitle = (gameClient: HostedGameClient) => {
+    const players = gameClient.getPlayers();
+    const { state } = gameClient.getHostedGame();
+    const playerPseudos = players.map(p => pseudoString(p, 'pseudo'));
+    if (players.length < 2 && 'created' === state)
+        return `${i18next.t('game.title_waiting')} ${playerPseudos[0]}`;
+    let yourTurn = '';
+    if ('playing' === state && loggedInPlayer.value != null) {
+        const player = loggedInPlayer.value;
+        const index = players.findIndex(p => p.publicId === player.publicId);
+        if (index != null && gameClient.getGame().getCurrentPlayerIndex() === index) {
+            yourTurn = `• ${i18next.t('game.title_your_turn')} • `;
+        }
+    }
+    const pairing = playerPseudos.join(' VS ');
+    return `${yourTurn}${i18next.t('game_state.' + state)}: ${pairing}`;
+};
+
 /*
  * Load game
  */
-const loadGame = async () => {
-    // Must reload from server when I watch a game, I am not up to date
-    // Or when I come back on a game where I did not received events, again not up to date
-    hostedGameClient.value = await lobbyStore.retrieveHostedGameClient(gameId, true);
-
-    if (!hostedGameClient.value) {
+lobbyStore.onLoaded(gameId, async gameClient => {
+    if (!gameClient) {
         router.push({ name: 'home' });
         return;
     }
+
+    hostedGameClient.value = gameClient;
 
     await initGameView();
 
     const playerPseudos = hostedGameClient.value.getPlayers().map(p => p.pseudo);
     const { state, host } = hostedGameClient.value.getHostedGame();
-    const stateForTitle = playerPseudos.length < 2 && 'created' === state
-        ? 'Waiting for an opponent'
-        : state[0].toUpperCase() + state.slice(1);
-    const title = `${stateForTitle}: ${playerPseudos.join(' VS ')}`;
     const description = 'created' === state
         ? `Hex game, hosted by ${host.pseudo}, waiting for an opponent.`
-        : `${state} Hex game, ${playerPseudos.join(' versus ')}.`
+        : `Hex game, ${playerPseudos.join(' versus ')}.`
     ;
 
     useSeoMeta({
         robots: 'noindex',
-        titleTemplate: site => `${title} - ${site}`,
-        ogTitle: title,
+        title: computed(() => {
+            if (hostedGameClient.value == null) return '';
+            return makeTitle(hostedGameClient.value);
+        }),
         description,
         ogDescription: description,
     });
-};
-
-onMounted(() => loadGame());
+});
 
 const join = () => hostedGameClient.value?.sendJoinGame();
 
@@ -409,22 +427,6 @@ const createOrAcceptRematch = async (): Promise<void> => {
     });
 };
 
-const viewRematch = (): void => {
-    if (!hostedGameClient.value) {
-        throw new Error('Error while trying to view rematch, no current game');
-    }
-    const rematchId = hostedGameClient.value.getRematchGameId();
-    if (rematchId == null) {
-        throw new Error('Error while trying to view rematch, empty rematchId');
-    }
-    router.push({
-        name: 'online-game',
-        params: {
-            gameId: rematchId
-        }
-    });
-};
-
 /*
  * Sidebar
  */
@@ -470,14 +472,21 @@ const unreadMessages = (): number => {
         - hostedGameClient.value.getReadMessages()
     ;
 };
+
+/*
+ * Rewind mode
+ */
+const enableRewindMode = () => {
+    gameView?.enableRewindMode();
+};
 </script>
 
 <template>
-    <div v-show="null !== hostedGameClient" class="game-and-sidebar-container" :class="localSettings.openSidebar ? 'sidebar-open' : (undefined === localSettings.openSidebar ? 'sidebar-auto' : '')">
+    <div v-show="gameViewInitialized && null !== hostedGameClient" class="game-and-sidebar-container" :class="localSettings.openSidebar ? 'sidebar-open' : (undefined === localSettings.openSidebar ? 'sidebar-auto' : '')">
         <div class="game">
 
             <!-- Game board, "Accept" button -->
-            <div class="board-container" ref="boardContainer">
+            <div class="board-container">
                 <AppBoard
                     v-if="null !== hostedGameClient && null !== gameView"
                     :players="hostedGameClient.getPlayers()"
@@ -496,6 +505,11 @@ const unreadMessages = (): number => {
             <!-- Control buttons at bottom of game board (resign, undo, confirm move, ...) -->
             <nav class="menu-game navbar" v-if="null !== hostedGameClient">
                 <div class="buttons container-fluid">
+
+                    <!-- rewind mode -->
+                    <button type="button" v-if="null !== gameView" @click="() => enableRewindMode()" class="btn btn-outline-primary">
+                        <BIconRewind />
+                    </button>
 
                     <!-- Resign -->
                     <button type="button" class="btn btn-outline-danger" v-if="canResign() && !canCancel()" @click="resign()">
@@ -542,12 +556,12 @@ const unreadMessages = (): number => {
 
                     <!-- Accept / View rematch -->
                     <template v-else-if="hostedGameClient.getRematchGameId() != null">
-                        <button type="button" class="btn btn-success" v-if="canAcceptRematch" @click="createOrAcceptRematch()">
+                        <button v-if="canAcceptRematch" type="button" class="btn btn-success" @click="createOrAcceptRematch()">
                             {{ ' ' + $t('rematch.accept') }}
                         </button>
-                        <button type="button" class="btn btn-outline-primary" v-else @click="viewRematch()">
+                        <router-link v-else :to="{ name: 'online-game', params: { gameId: hostedGameClient.getRematchGameId() } }" class="btn btn-outline-primary">
                             {{ ' ' + $t('rematch.view') }}
-                        </button>
+                        </router-link>
                     </template>
 
                     <!-- Chat -->
@@ -572,9 +586,10 @@ const unreadMessages = (): number => {
         <div class="sidebar bg-body" v-if="(hostedGameClient instanceof HostedGameClient)">
             <AppGameSidebar
                 :hostedGameClient="hostedGameClient"
+                v-if="gameView"
                 :gameView="gameView"
                 @close="showSidebar(false)"
-                @toggle-coords="toggleCoords()"
+                @toggleCoords="toggleCoords()"
             />
         </div>
     </div>
@@ -582,6 +597,8 @@ const unreadMessages = (): number => {
     <div v-if="null === hostedGameClient || null === gameView" class="container-fluid my-3">
         <p class="lead text-center">{{ $t('loading_game') }}</p>
     </div>
+
+    <AppConnectionAlert />
 </template>
 
 <style scoped lang="stylus">
@@ -638,7 +655,7 @@ sidebarOpen()
         position relative
         width 100%
 
-        @media (max-width: 575px)
+        @media (max-width: 575.5px) // .5 is a fix because sometimes 575px only is not inclusive
             position absolute
             right 0
             top 0

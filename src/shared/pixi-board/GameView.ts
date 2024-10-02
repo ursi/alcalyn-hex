@@ -1,22 +1,20 @@
-import { Game, Move, PlayerIndex } from '@shared/game-engine';
-import { Application, Container, Graphics, ICanvas, PointData, Text, TextStyle } from 'pixi.js';
-import Hex from '@client/pixi-board/Hex';
-import { Theme, themes } from '@client/pixi-board/BoardTheme';
+import { Game, Move, PlayerIndex, Coords } from '../game-engine';
+import { Application, Container, FillGradient, Graphics, PointData, Text, TextStyle } from 'pixi.js';
+import Hex from './Hex';
+import { Theme, themes } from './BoardTheme';
 import { TypedEmitter } from 'tiny-typed-emitter';
-import debounceFunction from 'debounce-fn';
 import SwapableSprite from './SwapableSprite';
 import SwapedSprite from './SwapedSprite';
-import { Coords } from '@shared/game-engine/Types';
-import useDarkLightThemeStore from '../stores/darkLightThemeStore';
-import usePlayerSettingsStore from '../stores/playerSettingsStore';
-import usePlayerLocalSettingsStore from '../stores/playerLocalSettingsStore';
-import { WatchStopHandle, watch } from 'vue';
-import { createShadingPattern } from '../../shared/app/shading-patterns';
+import { createShadingPattern, ShadingPatternType } from './shading-patterns';
+import { ResizeObserverDebounced } from '../resize-observer-debounced/ResizeObserverDebounced';
+import { Mark } from './Mark';
 
 const { min, max, sin, cos, sqrt, ceil, PI } = Math;
 const SQRT_3_2 = sqrt(3) / 2;
 const PI_3 = PI / 3;
 const PI_6 = PI / 6;
+
+type OrientationMode = 'landscape' | 'portrait';
 
 /**
  * Integer, every PI/6.
@@ -42,25 +40,95 @@ type GameViewEvents = {
     endedAndWinAnimationOver: () => void;
 
     orientationChanged: () => void;
+
+    movesHistoryCursorChanged: (cursor: null | number) => void;
 };
 
-export default class GameView extends TypedEmitter<GameViewEvents>
-{
-    static currentTheme: Theme;
+const defer = () => {
+    let resolve!: () => void;
+    let reject!: (reason: Error) => void;
 
-    private hexes: Hex[][];
-    private pixi: Application;
-    private gameContainer: Container = new Container();
+    const promise = new Promise<void>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
 
-    private preferredOrientations: PreferredOrientations = {
+    return { promise, resolve, reject };
+};
+
+type GameViewOptions = {
+    /**
+     * Theme/colors used to display board
+     */
+    theme: Theme;
+
+    /**
+     * Whether to show cell coords around the board
+     */
+    displayCoords: boolean;
+
+    /**
+     * Preferred orientations when game view is sized in landscape or portrait
+     */
+    preferredOrientations: PreferredOrientations;
+
+    /**
+     * Let "auto" to adapt board orientation depending on container ratio.
+     * Or set "landscape" or "portrait" to force displaying in this mode.
+     */
+    selectedBoardOrientationMode: 'auto' | OrientationMode;
+
+    /**
+     * Whether to show "anchors" on 4-4 cells.
+     * Only for size > 9.
+     */
+    show44dots: boolean;
+
+    shadingPatternType: ShadingPatternType;
+    shadingPatternOption: unknown;
+    shadingPatternIntensity: number;
+};
+
+const defaultOptions: GameViewOptions = {
+    theme: themes.dark,
+    displayCoords: false,
+    preferredOrientations: {
         landscape: 11, // Diamond
         portrait: 9, // Vertical flat
-    };
+    },
+    selectedBoardOrientationMode: 'auto',
+    show44dots: false,
+    shadingPatternType: null,
+    shadingPatternIntensity: 0.5,
+    shadingPatternOption: null,
+};
+
+/**
+ * Generates a pixi application to show a Hex board and position from a game.
+ *
+ * GameView should not be a vue ref, it caused performance issues, more especially when calling .mount() on gameView.value
+ * Also experienced crashes when toggling coords.
+ *
+ * Memory leaks: to check for memory leak,
+ * put `redraw()` in a loop (i.e `setInterval(() => this.redraw(), 20)`),
+ * open a game to create a GameView,
+ * check memory used, then create a snapshot after few seconds (no need to exceed 400Mb).
+ * In chrome, Summary, check for known pixi classes that take more space.
+ */
+export default class GameView extends TypedEmitter<GameViewEvents>
+{
+    private options: GameViewOptions;
+
+    private containerElement: null | HTMLElement = null;
+    private initialized = false;
+
+    private hexes: Hex[][] = [];
+    private pixi: Application;
+    private gameContainer: Container = new Container();
 
     private currentOrientation: number;
 
     private sidesGraphics: [Graphics, Graphics];
-    private displayCoords = false;
 
     private lastSimpleMoveHighlighted: null | Coords = null;
     private swapable: SwapableSprite;
@@ -68,65 +136,122 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
     private previewedMove: null | { move: Move, playerIndex: PlayerIndex } = null;
 
+    /**
+     * Show an earlier position on the board.
+     * - `null`: show current position
+     * - `0`: show first move
+     * - `-1`: show empty board
+     */
+    private movesHistoryCursor: null | number = null;
+
+    /**
+     * Listener for keyboard event to control moves history cursor
+     */
+    private keyboardEventListener: null | ((event: KeyboardEvent) => void) = null;
+
     private resizeObserver: null | ResizeObserver = null;
-    private themeSwitchedListener = () => this.redraw();
-    private settingsChangedListener = () => this.redraw();
 
-    private unwatchThemeSwitchedListener: WatchStopHandle;
-    private unwatchSettingsChangedListener: WatchStopHandle;
-    private unwatchLocalSettingsChangedListener: WatchStopHandle;
+    private initPromise = defer();
 
-    private initPromise: Promise<void>;
+    private marksContainer = new Container();
+    private marks: Mark[] = [];
 
     constructor(
         private game: Game,
-
-        /**
-         * Element in which this gameView should fit.
-         * Game view will then auto fit when element size changes.
-         * Element should be fixed size.
-         */
-        private containerElement: HTMLElement,
+        options: Partial<GameViewOptions> = {},
     ) {
         super();
 
-        GameView.currentTheme = themes[useDarkLightThemeStore().displayedTheme()];
+        this.options = {
+            ...defaultOptions,
+            ...options,
+        };
+    }
+
+    private async doMount(element: HTMLElement): Promise<void>
+    {
+        if (null !== this.containerElement) {
+            throw new Error('GameView already mounted.');
+        }
+
+        this.containerElement = element;
 
         this.pixi = new Application();
 
-        this.initPromise = this.pixi.init({
+        await this.pixi.init({
             antialias: true,
             backgroundAlpha: 0,
             resolution: ceil(window.devicePixelRatio),
             autoDensity: true,
-            resizeTo: this.containerElement,
+            resizeTo: element,
             ...this.getWrapperSize(),
         });
 
-        (async () => {
-            await this.ready();
+        this.listenContainerElementResize(element);
 
-            this.listenContainerElementResize();
+        this.pixi.stage.addChild(this.gameContainer);
 
-            this.pixi.stage.addChild(this.gameContainer);
+        this.redraw();
+        this.listenModel();
 
-            this.redraw();
-            this.listenModel();
+        element.appendChild(this.getView());
+    }
 
-            this.unwatchThemeSwitchedListener = watch(useDarkLightThemeStore().displayedTheme, this.themeSwitchedListener);
-            this.unwatchSettingsChangedListener = watch(() => usePlayerSettingsStore().playerSettings, this.settingsChangedListener, { deep: true });
-            this.unwatchLocalSettingsChangedListener = watch(() => usePlayerLocalSettingsStore().localSettings.selectedBoardOrientation, this.settingsChangedListener);
+    /**
+     * Mount the gameView on an element.
+     * Will initialize pixi app, draw it, and append canvas to element.
+     *
+     * NEVER call mount() on a vue ref, it is very laggy.
+     *
+     * I.e don't do:
+     * ```
+     *      gameViewRef.value.mount();
+     * ```
+     * do:
+     * ```
+     *      gameViewRef.value = gameView;
+     *      gameView.mount();
+     * ```
+     *
+     * @param element Element in which this gameView should fit.
+     * Game view will then auto fit when element size changes.
+     * Element should be fixed size.
+     *
+     * @returns Promise that resolves when application is initialized.
+     */
+    async mount(element: HTMLElement): Promise<void>
+    {
+        try {
+            await this.doMount(element);
+            this.initPromise.resolve();
+            this.initialized = true;
+        } catch (e) {
+            this.initPromise.reject(e);
+        }
 
-            if (this.game.isEnded()) {
-                this.highlightSidesFromGame();
-                this.animateWinningPath();
-            }
-        })();
+        return this.ready();
     }
 
     async ready(): Promise<void>
     {
-        return this.initPromise;
+        return this.initPromise.promise;
+    }
+
+    /**
+     * Returns which board orientation should be used
+     * from game view wrapper ratio, and user preferred orientations for landscape and portrait.
+     */
+    getComputedBoardOrientationMode(): OrientationMode
+    {
+        const { selectedBoardOrientationMode: selectedBoardOrientation } = this.options;
+
+        // If "portrait" or "landscape" explicitely selected, returns it
+        if ('auto' !== selectedBoardOrientation) {
+            return selectedBoardOrientation;
+        }
+
+        // If set to auto, returns depending on wrapper ratio
+        return this.getWrapperOrientationMode();
     }
 
     /**
@@ -135,17 +260,9 @@ export default class GameView extends TypedEmitter<GameViewEvents>
      */
     getComputedBoardOrientation(): number
     {
-        const wrapperSize = this.getWrapperSize();
-        const { selectedBoardOrientation } = usePlayerLocalSettingsStore().localSettings;
+        const { preferredOrientations } = this.options;
 
-        if ('auto' === selectedBoardOrientation) {
-            return wrapperSize.width > wrapperSize.height
-                ? this.preferredOrientations.landscape
-                : this.preferredOrientations.portrait
-            ;
-        }
-
-        return this.preferredOrientations[selectedBoardOrientation];
+        return preferredOrientations[this.getComputedBoardOrientationMode()];
     }
 
     /**
@@ -162,10 +279,27 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         }
     }
 
-    private redraw(): void
+    protected redrawIfInitialized(): void
     {
-        GameView.currentTheme = themes[useDarkLightThemeStore().displayedTheme()];
+        if (this.initialized) {
+            this.redraw();
+        }
+    }
+
+    protected redraw(): void
+    {
         const wrapperSize = this.getWrapperSize();
+
+        if (null === wrapperSize) {
+            throw new Error('Cannot redraw, no wrapper size, seems not yet mounted');
+        }
+
+        // Prevent destroying marks recursively
+        this.gameContainer.removeChild(this.marksContainer);
+
+        for (const child of this.gameContainer.children) {
+            child.destroy(true);
+        }
 
         this.gameContainer.removeChildren();
 
@@ -189,7 +323,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             this.createColoredSides(),
         );
 
-        if (this.displayCoords) {
+        if (this.options.displayCoords) {
             this.gameContainer.addChild(this.createCoords());
         }
 
@@ -197,6 +331,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.swaped = this.createSwaped();
 
         this.createAndAddHexes();
+        this.addAllMoves();
         this.highlightSidesFromGame();
 
         if (null !== this.previewedMove) {
@@ -207,16 +342,21 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.gameContainer.addChild(
             this.swapable,
             this.swaped,
+            this.marksContainer,
         );
     }
 
     private resizeRendererAndRedraw(): void
     {
-        if (!this.pixi.renderer) {
+        if (!this.initialized) {
             return;
         }
 
         const wrapperSize = this.getWrapperSize();
+
+        if (!this.pixi.renderer || null === wrapperSize) {
+            throw new Error('Missing renderer or wrapper size');
+        }
 
         this.pixi.renderer.resize(wrapperSize.width, wrapperSize.height);
         this.redraw();
@@ -230,23 +370,45 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         }
     }
 
-    private listenContainerElementResize(): void
+    private listenContainerElementResize(element: HTMLElement): void
     {
-        this.resizeRendererAndRedraw();
+        // Resize renderer first when starting listening to element resize
+        //this.resizeRendererAndRedraw();
+
         this.destroyResizeObserver();
 
-        this.resizeObserver = new ResizeObserver(debounceFunction(() => this.resizeRendererAndRedraw(), {
-            wait: 60,
-            before: true,
-            after: true,
-        }));
+        this.resizeObserver = new ResizeObserverDebounced(() => this.resizeRendererAndRedraw());
 
-        this.resizeObserver.observe(this.containerElement);
+        this.resizeObserver.observe(element);
     }
 
-    getWrapperSize(): GameViewSize
+    /**
+     * Get current size of the dom element that is containing the pixi application.
+     * Can be null if not yet mounted.
+     */
+    private getWrapperSize(): null | GameViewSize
     {
-        return this.containerElement.getBoundingClientRect();
+        if (null === this.containerElement) {
+            return null;
+        }
+
+        const { width, height } = this.containerElement.getBoundingClientRect();
+
+        return { width, height };
+    }
+
+    private getWrapperOrientationMode(): OrientationMode
+    {
+        const wrapperSize = this.getWrapperSize();
+
+        if (null === wrapperSize) {
+            return 'landscape';
+        }
+
+        return wrapperSize.width > wrapperSize.height
+            ? 'landscape'
+            : 'portrait'
+        ;
     }
 
     getGame()
@@ -254,20 +416,20 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         return this.game;
     }
 
-    getView(): ICanvas
+    getView(): HTMLCanvasElement
     {
         return this.pixi.canvas;
     }
 
     getPreferredOrientations(): PreferredOrientations
     {
-        return this.preferredOrientations;
+        return this.options.preferredOrientations;
     }
 
     setPreferredOrientations(preferredOrientations: PreferredOrientations): void
     {
-        this.preferredOrientations = preferredOrientations;
-        this.redraw();
+        this.options.preferredOrientations = preferredOrientations;
+        this.redrawIfInitialized();
     }
 
     /**
@@ -277,6 +439,27 @@ export default class GameView extends TypedEmitter<GameViewEvents>
     getCurrentOrientation(): number
     {
         return (this.currentOrientation + 12) % 12;
+    }
+
+    getTheme(): Theme
+    {
+        return this.options.theme;
+    }
+
+    setTheme(theme: Theme): void
+    {
+        this.options.theme = theme;
+        this.redrawIfInitialized();
+    }
+
+    updateOptions(options: Partial<GameViewOptions>): void
+    {
+        this.options = {
+            ...this.options,
+            ...options,
+        };
+
+        this.redrawIfInitialized();
     }
 
     /**
@@ -290,6 +473,10 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         const boardHeight = Hex.RADIUS * this.game.getSize() * 1.5 - 0.5;
         const boardWidth = Hex.RADIUS * this.game.getSize() * SQRT_3_2;
         const wrapperSize = this.getWrapperSize();
+
+        if (null === wrapperSize) {
+            return;
+        }
 
         const boardCorner0 = {
             x: wrapperSize.width / 2 + boardHeight * cos(rotation + 3.5 * PI_3),
@@ -333,7 +520,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         }
 
         // Add margin to display coords around the board
-        if (this.displayCoords) {
+        if (this.options.displayCoords) {
             boxWidth += Hex.RADIUS * 1.8;
             boxHeight += Hex.RADIUS * 1.8;
         }
@@ -453,7 +640,12 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.game.on('canceled', () => this.endedCallback());
     }
 
-    private async animateWinningPath(): Promise<void>
+    /**
+     * Animate winning path if there is one.
+     * To be called once all is loaded and board won't redraw anymore
+     * (redrawing while animation is running will make the animation incomplete).
+     */
+    async animateWinningPath(): Promise<void>
     {
         const winningPath = this.game.getBoard().getShortestWinningPath();
 
@@ -473,28 +665,49 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
     private createAndAddHexes(): void
     {
-        const { playerSettings } = usePlayerSettingsStore();
-        const size = this.game.getSize();
+        if (this.hexes.length > 0) {
+            for (const hexRow of this.hexes) {
+                for (const hex of hexRow) {
+                    hex.destroy(true);
+                }
+            }
 
-        const boardShadingPattern = playerSettings?.boardShadingPattern ?? null;
-        const boardShadingPatternIntensity = playerSettings?.boardShadingPatternIntensity ?? 0.5;
-        const boardShadingPatternOption = playerSettings?.boardShadingPatternOption ?? null;
-        const show44dots = playerSettings?.show44dots ?? false;
-        const shadingPattern = createShadingPattern(boardShadingPattern, size, boardShadingPatternOption);
+            this.hexes = [];
+        }
+
+        const hexesContainer = new Container();
+        const size = this.game.getSize();
+        const { show44dots, shadingPatternType, shadingPatternIntensity, shadingPatternOption } = this.options;
+        const shadingPattern = createShadingPattern(shadingPatternType, size, shadingPatternOption);
 
         this.hexes = Array(size).fill(null).map(() => Array(size));
 
         for (let row = 0; row < size; ++row) {
             for (let col = 0; col < size; ++col) {
-                const hex = new Hex(this.game.getBoard().getCell(row, col), shadingPattern.calc(row, col) * boardShadingPatternIntensity);
+                const hex = new Hex(
+                    this.options.theme,
+                    null,
+                    shadingPattern.calc(row, col) * shadingPatternIntensity,
+                );
 
                 hex.position = Hex.coords(row, col);
 
                 this.hexes[row][col] = hex;
 
-                this.gameContainer.addChild(hex);
+                hexesContainer.addChild(hex);
 
                 hex.on('pointertap', () => {
+
+                    // Disable play in rewind mode. May change when simulation mode is implemented.
+                    if (null !== this.movesHistoryCursor) {
+                        if (this.movesHistoryCursor !== this.game.getMovesHistory().length - 1) {
+                            return;
+                        }
+
+                        // In case rewind was already on last move, just disable rewind mode.
+                        this.disableRewindMode();
+                    }
+
                     this.emit('hexClicked', { row, col });
                 });
             }
@@ -507,7 +720,19 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             this.hexes[size - 4][size - 4].showDot();
         }
 
-        this.highlightLastMove();
+        this.gameContainer.addChild(hexesContainer);
+    }
+
+    private unhighlightLastMove(): void
+    {
+        if (null !== this.lastSimpleMoveHighlighted) {
+            const { row, col } = this.lastSimpleMoveHighlighted;
+            this.hexes[row][col].setHighlighted(false);
+            this.lastSimpleMoveHighlighted = null;
+        }
+
+        this.showSwapable(false);
+        this.showSwaped(false);
     }
 
     /**
@@ -519,14 +744,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
      */
     private highlightLastMove(move: null | Move = null): void
     {
-        if (null !== this.lastSimpleMoveHighlighted) {
-            const { row, col } = this.lastSimpleMoveHighlighted;
-            this.hexes[row][col].setHighlighted(false);
-            this.lastSimpleMoveHighlighted = null;
-        }
-
-        this.showSwapable(false);
-        this.showSwaped(false);
+        this.unhighlightLastMove();
 
         const lastMove = move ?? this.game.getLastMove();
 
@@ -563,8 +781,8 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         const m = (a: PointData, b: PointData = { x: 0, y: 0 }) => g.moveTo(a.x + b.x, a.y + b.y);
 
         // Set sides colors
-        this.sidesGraphics[0].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: GameView.currentTheme.colorA });
-        this.sidesGraphics[1].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: GameView.currentTheme.colorB });
+        this.sidesGraphics[0].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: this.options.theme.colorA });
+        this.sidesGraphics[1].setStrokeStyle({ width: Hex.RADIUS * 0.6, color: this.options.theme.colorB });
 
         // From a1 to i1 (red)
         g = this.sidesGraphics[0];
@@ -619,30 +837,34 @@ export default class GameView extends TypedEmitter<GameViewEvents>
 
     getDisplayCoords(): boolean
     {
-        return this.displayCoords;
+        return this.options.displayCoords;
     }
 
-    setDisplayCoords(visible = true): GameView
+    setDisplayCoords(visible = true): void
     {
-        this.displayCoords = visible;
-        this.redraw();
-
-        return this;
+        this.options.displayCoords = visible;
+        this.redrawIfInitialized();
     }
 
-    toggleDisplayCoords(): GameView
+    toggleDisplayCoords(): void
     {
-        return this.setDisplayCoords(!this.displayCoords);
+        this.setDisplayCoords(!this.options.displayCoords);
     }
 
     private createCoords(): Container
     {
         const container = new Container();
 
+        // TODO tmp, pixi bug workaround. Remove this and just set fill = this.options.theme.textColor
+        // with this is fixed: https://github.com/pixijs/pixijs/discussions/10444
+        const fill = new FillGradient(0, 0, 1, 1);
+        fill.addColorStop(0, this.options.theme.textColor);
+        fill.addColorStop(1, this.options.theme.textColor);
+
         const coordsTextStyle = new TextStyle({
             fontFamily: 'Arial',
             fontSize: Hex.RADIUS * 0.6,
-            fill: GameView.currentTheme.textColor,
+            fill,
         });
 
         const createText = (string: string, x: number, y: number): Text => {
@@ -692,12 +914,12 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             return;
         }
 
-        if (!this.game.isEnded()) {
-            this.highlightSideForPlayer(this.game.getCurrentPlayerIndex());
+        if (this.game.isEnded()) {
+            this.highlightSideForPlayer(this.game.getStrictWinner());
             return;
         }
 
-        this.highlightSideForPlayer(this.game.getStrictWinner());
+        this.highlightSideForPlayer(this.game.getCurrentPlayerIndex());
     }
 
     /**
@@ -818,13 +1040,151 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         return this;
     }
 
+    getMovesHistoryCursor(): null | number
+    {
+        return this.movesHistoryCursor;
+    }
+
+    setMovesHistoryCursor(cursor: null | number): void
+    {
+        if (cursor === this.movesHistoryCursor) {
+            return;
+        }
+
+        this.movesHistoryCursor = cursor;
+        this.boundMovesHistoryCursor();
+        this.redrawIfInitialized();
+        this.emit('movesHistoryCursorChanged', this.movesHistoryCursor);
+    }
+
+    private boundMovesHistoryCursor(): void
+    {
+        if (null === this.movesHistoryCursor) {
+            return;
+        }
+
+        if (this.movesHistoryCursor < -1) {
+            this.movesHistoryCursor = -1;
+            return;
+        }
+
+        const { length } = this.getGame().getMovesHistory();
+
+        if (this.movesHistoryCursor >= length) {
+            this.movesHistoryCursor = length - 1;
+        }
+    }
+
+    enableRewindMode(): void
+    {
+        if (null === this.movesHistoryCursor) {
+            this.setMovesHistoryCursor(Infinity);
+        }
+    }
+
+    disableRewindMode(): void
+    {
+        if (null !== this.movesHistoryCursor) {
+            this.setMovesHistoryCursor(null);
+        }
+    }
+
+    changeMovesHistoryCursor(delta: number): void
+    {
+        this.setMovesHistoryCursor((this.movesHistoryCursor ?? this.getGame().getMovesHistory().length - 1) + delta);
+    }
+
+    addMove(move: Move, byPlayerIndex: PlayerIndex): void
+    {
+        switch (move.getSpecialMoveType()) {
+            case undefined:
+                this.hexes[move.row][move.col].setPlayer(byPlayerIndex);
+                break;
+
+            case 'swap-pieces': {
+                const { swapped, mirror } = this.getSwapCoordsFromGameOrUndoneMoves();
+
+                this.hexes[swapped.row][swapped.col].setPlayer(null);
+                this.hexes[mirror.row][mirror.col].setPlayer(byPlayerIndex);
+                break;
+            }
+        }
+
+        this.removePreviewMove();
+        this.highlightLastMove(move);
+    }
+
+    private addAllMoves(): void
+    {
+        this.unhighlightLastMove();
+
+        const movesHistory = this.game.getMovesHistory();
+
+        for (let i = 0; i < movesHistory.length; ++i) {
+            if (null !== this.movesHistoryCursor && i > this.movesHistoryCursor) {
+                break;
+            }
+
+            this.addMove(movesHistory[i], i % 2 as PlayerIndex);
+        }
+    }
+
+    listenArrowKeys(): void
+    {
+        if (null !== this.keyboardEventListener) {
+            return;
+        }
+
+        this.keyboardEventListener = event => {
+            if ((event.target as HTMLElement | null)?.nodeName === 'INPUT')
+                return;
+            switch (event.key) {
+                case 'ArrowLeft':
+                    this.changeMovesHistoryCursor(-1);
+                    break;
+
+                case 'ArrowRight':
+                    this.changeMovesHistoryCursor(+1);
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', this.keyboardEventListener);
+    }
+
+    unlistenArrowKeys(): void
+    {
+        if (null === this.keyboardEventListener) {
+            return;
+        }
+
+        window.removeEventListener('keydown', this.keyboardEventListener);
+        this.keyboardEventListener = null;
+    }
+
+    addMark(mark: Mark): void
+    {
+        this.marks.push(mark);
+        this.marksContainer.addChild(mark);
+    }
+
+    removeMark(mark: Mark): void
+    {
+        this.marksContainer.removeChild(mark);
+        this.marks = this.marks.filter(m => m !== mark);
+    }
+
+    removeAllMarks(): void
+    {
+        this.marksContainer.removeChildren();
+        this.marks = [];
+    }
+
     destroy(): void
     {
         this.pixi.destroy(true);
 
         this.destroyResizeObserver();
-        this.unwatchThemeSwitchedListener();
-        this.unwatchSettingsChangedListener();
-        this.unwatchLocalSettingsChangedListener();
+        this.unlistenArrowKeys();
     }
 }

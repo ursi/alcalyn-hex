@@ -1,7 +1,7 @@
-import { Container, Graphics, PointData, Ticker } from 'pixi.js';
-import { PlayerIndex } from '@shared/game-engine';
-import GameView from './GameView';
-import { colorAverage } from '../../shared/app/colorUtils';
+import { Container, DestroyOptions, Graphics, PointData, Ticker } from 'pixi.js';
+import { PlayerIndex } from '../game-engine';
+import { colorAverage } from './colorUtils';
+import { Theme } from './BoardTheme';
 
 const { PI, cos, sin, sqrt } = Math;
 const SQRT3 = sqrt(3);
@@ -38,8 +38,11 @@ export default class Hex extends Container
     private hexColor: Graphics;
     private highlight: Graphics;
     private dotContainer: Container = new Container();
+    private animationLoop: null | (() => void) = null;
 
     constructor(
+        private theme: Theme,
+
         /**
          * null: empty cell
          * 0 or 1: red or blue
@@ -93,7 +96,7 @@ export default class Hex extends Container
         }
 
         g.poly(path);
-        g.fill({ color: GameView.currentTheme.strokeColor, alpha: 1 });
+        g.fill({ color: this.theme.strokeColor, alpha: 1 });
 
         return g;
     }
@@ -112,8 +115,8 @@ export default class Hex extends Container
 
         g.poly(path);
         g.fill({ color: colorAverage(
-            GameView.currentTheme.colorEmpty,
-            GameView.currentTheme.colorEmptyShade,
+            this.theme.colorEmpty,
+            this.theme.colorEmptyShade,
             this.shading,
         ) });
 
@@ -171,7 +174,7 @@ export default class Hex extends Container
         const g = new Graphics();
 
         g.circle(0, 0, Hex.RADIUS * 0.2);
-        g.fill({ color: GameView.currentTheme.textColor, alpha: 0.2 });
+        g.fill({ color: this.theme.textColor, alpha: 0.2 });
 
         this.dotContainer.addChild(g);
     }
@@ -199,8 +202,8 @@ export default class Hex extends Container
 
         if (null !== this.playerIndex) {
             this.hexColor.tint = [
-                GameView.currentTheme.colorA,
-                GameView.currentTheme.colorB,
+                this.theme.colorA,
+                this.theme.colorB,
             ][this.playerIndex];
         }
     }
@@ -219,8 +222,8 @@ export default class Hex extends Container
         this.hexColor.alpha = 0.5;
 
         this.hexColor.tint = [
-            GameView.currentTheme.colorA,
-            GameView.currentTheme.colorB,
+            this.theme.colorA,
+            this.theme.colorB,
         ][playerIndex];
 
         return this;
@@ -240,15 +243,36 @@ export default class Hex extends Container
         return this;
     }
 
+    private clearAnimationLoop(): void
+    {
+        if (null !== this.animationLoop) {
+            if (this.destroyed) {
+                // Call animationLoop to resolve promise if destroyed and prevent let it unresolved
+                this.animationLoop();
+            } else {
+                this.hexColor.scale = { x: 1, y: 1 };
+            }
+
+            Ticker.shared.remove(this.animationLoop);
+            this.animationLoop = null;
+        }
+    }
+
     async animate(): Promise<void>
     {
+        this.clearAnimationLoop();
+
         return new Promise(resolve => {
             let i = 0;
 
-            const animationLoop = (): void => {
+            this.animationLoop = (): void => {
+                if (this.destroyed) {
+                    resolve();
+                    return;
+                }
+
                 if (i >= animationDuration) {
-                    this.hexColor.scale = { x: 1, y: 1 };
-                    Ticker.shared.remove(animationLoop);
+                    this.clearAnimationLoop();
                     resolve();
                     return;
                 }
@@ -258,7 +282,15 @@ export default class Hex extends Container
                 ++i;
             };
 
-            Ticker.shared.add(animationLoop);
+            Ticker.shared.add(this.animationLoop);
         });
+    }
+
+    override destroy(options?: DestroyOptions): void
+    {
+        super.destroy(options);
+
+        // Must be after destroy, so animation knows it's destroyed and can resolve
+        this.clearAnimationLoop();
     }
 }

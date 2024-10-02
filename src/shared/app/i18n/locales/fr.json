@@ -26,7 +26,9 @@
         "opponent": "Adversaire",
         "board": "Plateau de jeu",
         "board_size": "Taille du plateau",
-        "outcome": "Résultat"
+        "outcome": "Résultat",
+        "title_waiting": "En attente d'un adversaire : créée par",
+        "title_your_turn": "Votre tour !"
     },
     "last_move": "Dernier coup",
     "player_settings": {
@@ -59,13 +61,13 @@
         "types": {
             "null": "Aucun",
             "tricolor_checkerboard": "Damier 3 couleurs",
-            "concentrical_rings": "Cercles concentriques (Hexworld)",
+            "concentrical_rings": "Cercles concentriques (HexWorld)",
             "height_5_lines": "Lignes en 5ème",
             "single_ring": "Cercle simple",
             "custom": "Personnalisé"
         },
         "custom_expression": "Expression personnalisée",
-        "help_custom": "Expression mathématique pour un motif personnalisé.<br>L'expression doit retourner un nombre entre 0 (pas colorée) et 1 (colorée) pour une case donnée (ligne, colonne). Vous pouvez utiliser par exemple 0.5 Pour un motif à trois couleurs. Retourner <code>true</code> ou <code>false</code> équivaut à retourner <code>1</code> ou <code>0</code>.<br>Des variables sont disponibles :<br>- <code>row</code> et <code>col</code> (raccourcis : <code>r</code> et <code>c</code>) pour le numéro de la ligne ou colonne, commence à 0.<br>- <code>size</code> (ou <code>s</code>) pour la taille du plateau.<br>- <code>distToSide</code> distance de la case actuelle au côté le plus proche.<br>Voir la liste des opérateurs possible sur https://github.com/silentmatt/expr-eval?tab=readme-ov-file#expression-syntax<br>Exemples :<br>- Cercles concentriques : <code>distToSide % 2</code><br>- Damier 3 couleurs : <code>((size + row - col) % 3) / 2</code><br>- Disque de rayon racine(20) : <code>o = size / 2; (row - o) ^ 2 + (col - o) ^ 2 < 20</code><br>Ouvrez la console javascript (F12) pour voir les erreurs lors de l'execution de votre expression."
+        "help_custom": "Expression mathématique pour un motif personnalisé.<br>L'expression doit retourner un nombre entre 0 (pas colorée) et 1 (colorée) pour une case donnée (ligne, colonne). Vous pouvez utiliser par exemple 0.5 Pour un motif à trois couleurs. Retourner <code>true</code> ou <code>false</code> équivaut à retourner <code>1</code> ou <code>0</code>.<br>Des variables sont disponibles :<br>- <code>row</code> et <code>col</code> (raccourcis : <code>r</code> et <code>c</code>) pour le numéro de la ligne ou colonne, commence à 0.<br>- <code>size</code> (ou <code>s</code>) pour la taille du plateau.<br>- <code>distToSide</code> distance de la case actuelle au côté le plus proche.<br>Voir la liste des opérateurs possible sur https://github.com/silentmatt/expr-eval?tab=readme-ov-file#expression-syntax<br>Exemples :<br>- Cercles concentriques : <code>distToSide % 2</code><br>- Damier 3 couleurs : <code>((size + row - col) % 3) / 2</code><br>- Disque de rayon racine(20) : <code>o = size / 2; (row - o) ^ 2 + (col - o) ^ 2 < 20</code><br>Ouvrez la console javascript (F12) pour voir les erreurs lors de l'execution de votre expression."
     },
     "preview": "Aperçu",
     "show_44_dots": "Afficher des points sur les cases en 4-4",
@@ -76,9 +78,9 @@
         "second": "s"
     },
     "player_won_by": {
-        "default": "{player} a gagné la partie !",
+        "default": "{player} a gagné !",
         "time": "{player} a gagné au temps !",
-        "resign": "{player} a gagné par abandon !",
+        "resign": "{player} a gagné !",
         "forfeit": "{player} a gagné par forfait !"
     },
     "create_game": {
@@ -115,8 +117,8 @@
     },
     "player_wins_by": {
         "time": "{player} gagne au temps !",
-        "resign": "{player} gagne par abandon !",
-        "default": "{player} remporte la partie !",
+        "resign": "{player} a gagné !",
+        "default": "{player} a gagné !",
         "forfeit": "{player} gagne par forfait !"
     },
     "1v1_ranked": {
@@ -139,7 +141,7 @@
         "title": "IA hors-ligne",
         "create": "Jouer hors-ligne contre l'IA"
     },
-    "offline_game_explain": "Une partie hors-ligne se déroule uniquement sur votre appareil, Le serveur PlayHex n'est pas appelé. Vous pouvez donc jouer sans internet.",
+    "offline_game_explain": "Une partie hors-ligne se déroule uniquement sur votre appareil, vous pouvez donc jouer sans internet. Le serveur PlayHex n'est pas appelé.",
     "cancel": "Annuler",
     "ranked": "Classée",
     "rating": "Évaluation : {{rating}}",
@@ -151,14 +153,14 @@
     "send_chat_message": "Envoyer",
     "landscape": "Paysage",
     "portrait": "Portrait",
-    "game_analyze": {
+    "game_analysis": {
         "best_move": "meilleur coup",
         "best": "meilleur :",
-        "analyze_by_ai": "Analyse de la partie par l'IA",
-        "analyze_game": "Analyser la partie",
+        "game_analysis": "Analyse de la partie par l'IA",
         "requested": "Analyse demandée…",
         "errored": "L'analyse a échouée !",
-        "how_it_works": "Fonctionnement"
+        "how_it_works": "Fonctionnement",
+        "request_analysis": "Demander une analyse par l'IA"
     },
     "try_again": "Réessayer",
     "language": "Langue",
@@ -170,6 +172,7 @@
     "loading_game": "Chargement de la partie…",
     "register_on_challonge": "S'enregistrer sur Challonge",
     "move": "coup",
+    "move_number": "coup {{n}}",
     "chat": "Tchat",
     "system": "Système",
     "resign": "Abandonner",
@@ -181,7 +184,7 @@
     "confirm_new_password": "Confirmer le mot de passe",
     "ping": {
         "ping_ms": "Ping : {{ms}}ms",
-        "date_shift_ms": "Compensation du décalage de date : {{ms}}ms"
+        "date_shift_ms": "Décalage de date : {{ms}}ms"
     },
     "game_candency": {
         "blitz": "Blitz",
@@ -239,7 +242,7 @@
         "second": "Deuxième"
     },
     "swap_rule": "Règle d'échange",
-    "allow_swap_pieces": "Permettre l'échange du premier coup",
+    "enable_swap_rule": "Permettre l'échange du premier coup",
     "game_finished_overlay": {
         "title": "Partie terminée"
     },
@@ -260,9 +263,15 @@
     "contribute": "Contribuer",
     "auto": "Auto",
     "undo": {
-        "undo_move": "Oups",
+        "undo_move": "Reprendre",
         "accept": "Accepter reprise",
         "reject": "Refuser"
     },
-    "pass": "Passer"
+    "pass": "Passer",
+    "game_state": {
+        "canceled": "Annulée",
+        "ended": "Terminée",
+        "created": "Créée",
+        "playing": "En cours"
+    }
 }

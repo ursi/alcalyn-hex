@@ -13,6 +13,7 @@ import { notifier } from './services/notifications';
 import useServerDateStore from './stores/serverDateStore';
 import { timeValueToMilliseconds } from '../shared/time-control/TimeValue';
 import { toEngineMove } from '../shared/app/models/Move';
+import { RichChat, RichChatMessage } from '../shared/app/rich-chat';
 
 type HostedGameClientEvents = {
     started: () => void;
@@ -37,7 +38,9 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
      */
     private readMessages: number;
 
-    private lowTimeNotificationThread: null | NodeJS.Timeout = null;
+    private richChat: RichChat;
+
+    private lowTimeNotificationThread: null | number = null;
 
     constructor(
         private hostedGame: HostedGame,
@@ -46,6 +49,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         super();
 
         this.readMessages = hostedGame.chatMessages.length;
+        this.richChat = new RichChat(hostedGame);
     }
 
     getState(): HostedGameState
@@ -185,6 +189,11 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         return this.hostedGame.chatMessages;
     }
 
+    getRichChatMessages(): RichChatMessage[]
+    {
+        return this.richChat.getRichChatMessages();
+    }
+
     isRanked(): boolean
     {
         return this.hostedGame.gameOptions.ranked;
@@ -209,6 +218,11 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
             return this.loadGame();
         }
 
+        return this.game;
+    }
+
+    getGameIfExists(): Game | null
+    {
         return this.game;
     }
 
@@ -540,6 +554,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
     onChatMessage(chatMessage: ChatMessage): void
     {
         this.hostedGame.chatMessages.push(chatMessage);
+        this.richChat.postChatMessage(chatMessage);
         this.emit('chatMessagePosted');
         notifier.emit('chatMessage', this.hostedGame, chatMessage);
     }

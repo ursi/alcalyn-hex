@@ -1,8 +1,12 @@
-import { Application, Container, FederatedPointerEvent, Graphics, ICanvas, Rectangle } from 'pixi.js';
-import debounceFunction from 'debounce-fn';
-import { themes } from '../pixi-board/BoardTheme';
+import { Application, Container, FederatedPointerEvent, Graphics, Rectangle } from 'pixi.js';
+import { ResizeObserverDebounced } from '../../shared/resize-observer-debounced/ResizeObserverDebounced';
+import { Move } from '../../shared/game-engine';
+import { themes } from '../../shared/pixi-board/BoardTheme';
 import { TypedEmitter } from 'tiny-typed-emitter';
-import { GameAnalyzeData } from '@shared/app/models/GameAnalyze';
+import { GameAnalyzeData } from '../../shared/app/models/GameAnalyze';
+import GameView from '../../shared/pixi-board/GameView';
+import { BestMoveMark } from './BestMoveMark';
+import { PlayedMoveMark } from './PlayedMoveMark';
 
 /**
  * Rectangle, but allow using negative height for better readability.
@@ -21,6 +25,18 @@ const rectWithNegative = (g: Graphics, x: number, y: number, width: number, heig
     g.rect(x, y, width, height);
 };
 
+const defer = () => {
+    let resolve!: () => void;
+    let reject!: (reason: Error) => void;
+
+    const promise = new Promise<void>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+
+    return { promise, resolve, reject };
+};
+
 export type MoveAndValue = {
     move: string;
     value: number;
@@ -36,7 +52,17 @@ export type AnalyzeMoveOutput = {
 };
 
 type GameAnalyzeViewEvents = {
-    selectedMove: (move: null | AnalyzeMoveOutput) => void;
+    /**
+     * Move is hovered, and is currently highlighted in this view.
+     * Should show summary info of the move.
+     */
+    highlightedMoveChanged: (move: null | AnalyzeMoveOutput) => void;
+
+    /**
+     * Move have been selected, i.e clicked by user.
+     * Should show detailled info of the move.
+     */
+    selectedMoveChanged: (move: null | AnalyzeMoveOutput) => void;
 };
 
 export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
@@ -45,61 +71,79 @@ export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
     private resizeObserver: null | ResizeObserver = null;
     private container: Container = new Container();
     private highlight: null | Graphics = null;
+    private highlightedMove: null | number = null;
+    private selectedMove: null | number = null;
+    private bestMoveMark = new BestMoveMark();
+    private playedMoveMark = new PlayedMoveMark();
 
-    private initPromise: Promise<void>;
+    private initPromise = defer();
+
+    /**
+     * Element in which this gameView should fit.
+     * View will then auto fit when element size changes.
+     * Element should have fixed size.
+     */
+    private containerElement: null | HTMLElement = null;
 
     constructor(
-        /**
-         * Element in which this gameView should fit.
-         * View will then auto fit when element size changes.
-         * Element should have fixed size.
-         */
-        private containerElement: HTMLElement,
-
         private analyze: GameAnalyzeData,
     ) {
         super();
+    }
 
+    private async doMount(element: HTMLElement): Promise<void>
+    {
         this.pixi = new Application();
 
-        this.initPromise = this.pixi.init({
+        await this.pixi.init({
             antialias: true,
             backgroundAlpha: 0,
             resolution: Math.ceil(window.devicePixelRatio),
             autoDensity: true,
-            resizeTo: containerElement,
+            resizeTo: element,
             ...this.getWrapperSize(),
         });
 
-        (async () => {
-            await this.ready();
+        this.pixi.stage.eventMode = 'static';
 
-            this.pixi.stage.eventMode = 'static';
+        this.pixi.stage.addChild(this.container);
 
-            this.pixi.stage.addChild(this.container);
+        this.listenContainerElementResize();
+        this.redraw();
 
-            this.listenContainerElementResize();
-            this.redraw();
+        element.appendChild(this.getView());
 
-            const selectMove = (event: FederatedPointerEvent) => {
-                const moveClicked = this.getMoveIndexAt(event.global);
+        const highlightMoveListener = (event: FederatedPointerEvent) => {
+            this.highlightMove(this.getMoveIndexAt(event.global));
+        };
 
-                if (null !== this.highlight) {
-                    const { width } = this.pixi.renderer;
-                    this.highlight.x = width * (moveClicked / this.analyze.length);
-                }
+        const selectMoveListener = (event: FederatedPointerEvent) => {
+            this.selectMove(this.getMoveIndexAt(event.global));
+        };
 
-                this.emit('selectedMove', this.analyze[moveClicked] as AnalyzeMoveOutput);
-            };
+        this.pixi.stage.on('mousemove', highlightMoveListener);
+        this.pixi.stage.on('pointertap', selectMoveListener);
+    }
 
-            this.pixi.stage.on('pointertap', selectMove);
-            this.pixi.stage.on('mousemove', selectMove);
-        })();
+    async mount(element: HTMLElement): Promise<void>
+    {
+        if (null !== this.containerElement) {
+            throw new Error('Game analyze view already mounted');
+        }
+
+        this.containerElement = element;
+
+        try {
+            await this.doMount(element);
+            this.initPromise.resolve();
+        } catch (e) {
+            this.initPromise.reject(e);
+        }
     }
 
     ready(): Promise<void>
     {
-        return this.initPromise;
+        return this.initPromise.promise;
     }
 
     private redraw()
@@ -130,6 +174,7 @@ export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
             const bestMovePower = moveAnalyze.bestMoves[0].whiteWin as number;
 
             if (movePower !== undefined) {
+                // Draw bar
                 rectWithNegative(
                     graphics,
                     i * barWidth,
@@ -141,13 +186,14 @@ export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
                 graphics.fill({ color: movePower < 0.5 ? themes.dark.colorA : themes.dark.colorB });
             }
 
+            // Draw best move
             graphics.circle(
                 (i + 0.5) * barWidth,
                 bestMovePower * height,
                 2,
             );
 
-            graphics.fill({ color: 'green' });
+            graphics.fill({ color: '0x00ff00' });
         }
 
         this.container.addChild(graphics);
@@ -155,23 +201,130 @@ export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
         // Highlight
         this.highlight = new Graphics();
 
+        this.highlight.visible = false;
         this.highlight.rect(0, 0, barWidth, height);
         this.highlight.stroke({
             color: 'white',
             width: 1,
         });
 
+        if (null !== this.highlightedMove) {
+            this.highlightMove(this.highlightedMove, true);
+        }
+
         this.container.addChild(this.highlight);
     }
 
-    getView(): ICanvas
+    getView(): HTMLCanvasElement
     {
         return this.pixi.canvas;
     }
 
     getWrapperSize()
     {
+        if (null === this.containerElement) {
+            throw new Error('Not yet mounted');
+        }
+
         return this.containerElement.getBoundingClientRect();
+    }
+
+    /**
+     * Update game view cursor when selected an analyzed move,
+     * and update selected move when game view cursor changed.
+     */
+    linkGameViewCursor(gameView: GameView): void
+    {
+        this.playedMoveMark.hide();
+        this.bestMoveMark.hide();
+        gameView.addMark(this.playedMoveMark);
+        gameView.addMark(this.bestMoveMark);
+
+        gameView.on('movesHistoryCursorChanged', cursor => {
+            if (null === cursor) {
+                return;
+            }
+
+            this.selectMove(cursor);
+        });
+
+        this.on('selectedMoveChanged', move => {
+            this.bestMoveMark.hide();
+            this.playedMoveMark.hide();
+
+            if (null === move) {
+                return;
+            }
+
+            gameView.setMovesHistoryCursor(move.moveIndex);
+
+            // Place best move
+            this.bestMoveMark.setCoords(Move.fromString(move.bestMoves[0].move));
+            this.bestMoveMark.show();
+
+            // Place played move and eval color
+            this.playedMoveMark.setCoords(Move.fromString(move.move.move));
+
+            const playedWhiteWin = move.move.whiteWin;
+            const bestWhiteWin = move.bestMoves[0].whiteWin;
+
+            if (undefined !== playedWhiteWin && undefined !== bestWhiteWin) {
+                let diff = playedWhiteWin - bestWhiteWin;
+                diff *= 2; // drop 50% means full red
+
+                // Oppose value every two move, as it is whiteWin
+                if (move.moveIndex % 2) {
+                    diff = -diff;
+                }
+
+                // Can be negative when player found a better move than cpu best move
+                if (diff < 0) {
+                    diff = 0;
+                }
+
+                // Can be >1 when big mistake, because we multiply the diff
+                if (diff > 1) {
+                    diff = 1;
+                }
+
+                this.playedMoveMark.setWhiteWinDiff(diff);
+            } else {
+                this.playedMoveMark.setWhiteWinDiff(0);
+            }
+
+            this.playedMoveMark.show();
+        });
+    }
+
+    selectMove(moveIndex: number): void
+    {
+        if (this.selectedMove === moveIndex) {
+            return;
+        }
+
+        this.highlightMove(moveIndex);
+
+        this.selectedMove = moveIndex;
+
+        this.emit('selectedMoveChanged', this.analyze[moveIndex] ?? null);
+    }
+
+    private highlightMove(moveIndex: number, force = false): void
+    {
+        if (null === this.highlight) {
+            return;
+        }
+
+        if (this.highlightedMove === moveIndex && !force) {
+            return;
+        }
+
+        const { width } = this.pixi.renderer;
+        this.highlight.visible = true;
+        this.highlight.x = width * (moveIndex / this.analyze.length);
+        this.highlightedMove = moveIndex;
+
+        this.emit('highlightedMoveChanged', this.analyze[moveIndex] ?? null);
     }
 
     private destroyResizeObserver(): void
@@ -184,13 +337,13 @@ export default class GameAnalyzeView extends TypedEmitter<GameAnalyzeViewEvents>
 
     private listenContainerElementResize(): void
     {
+        if (null === this.containerElement) {
+            throw new Error('Not yet mounted');
+        }
+
         this.destroyResizeObserver();
 
-        this.resizeObserver = new ResizeObserver(debounceFunction(() => this.redraw(), {
-            wait: 60,
-            before: true,
-            after: true,
-        }));
+        this.resizeObserver = new ResizeObserverDebounced(() => this.redraw());
 
         this.resizeObserver.observe(this.containerElement);
     }

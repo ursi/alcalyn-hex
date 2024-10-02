@@ -1,20 +1,20 @@
 <script setup lang="ts">
 /* eslint-env browser */
-import { PropType, nextTick, onMounted, ref, toRefs, watch } from 'vue';
-import { BIconAlphabet, BIconSendFill, BIconArrowBarRight, BIconShareFill, BIconCheck, BIconDownload, BIconTrophy, BIconCaretUpFill, BIconCaretDownFill, BIconInfoCircle } from 'bootstrap-icons-vue';
+import { PropType, nextTick, onMounted, ref, toRefs, watch, watchEffect } from 'vue';
+import { BIconAlphabet, BIconSendFill, BIconArrowBarRight, BIconShareFill, BIconCheck, BIconDownload, BIconTrophy, BIconCaretUpFill, BIconCaretDownFill, BIconInfoCircle, BIconGear } from 'bootstrap-icons-vue';
 import { storeToRefs } from 'pinia';
 import copy from 'copy-to-clipboard';
 import useAuthStore from '../../stores/authStore';
 import usePlayerLocalSettingsStore from '../../stores/playerLocalSettingsStore';
 import AppPseudo from './AppPseudo.vue';
 import HostedGameClient from 'HostedGameClient';
-import { Player, Rating } from '../../../shared/app/models';
+import { ChatMessage, Player, Rating } from '../../../shared/app/models';
 import AppGameAnalyze from './AppGameAnalyze.vue';
 import AppGameRulesSummary from './AppGameRulesSummary.vue';
 import AppTimeControlLabel from './AppTimeControlLabel.vue';
 import Move from '@shared/game-engine/Move';
 import { canPlayerChatInGame } from '../../../shared/app/chatUtils';
-import { format, formatDistanceToNow, formatRelative, isSameDay } from 'date-fns';
+import { format, formatDistanceToNow, formatRelative, intlFormat, isSameDay } from 'date-fns';
 import { gameToHexworldLink } from '../../../shared/app/hexworld';
 import { canPassAgain } from '../../../shared/app/passUtils';
 import { timeControlToCadencyName } from '../../../shared/app/timeControlUtils';
@@ -22,11 +22,12 @@ import useAnalyzeStore from '../../stores/analyzeStore';
 import useServerDateStore from '../../stores/serverDateStore';
 import { downloadString } from '../../services/fileDownload';
 import { pseudoString } from '../../../shared/app/pseudoUtils';
-import { gameToSGF } from '../../../shared/game-engine/SGF';
-import GameView from '../../pixi-board/GameView';
+import { hostedGameToSGF } from '../../../shared/app/hostedGameToSGF';
+import GameView from '../../../shared/pixi-board/GameView';
 import { isMyTurn } from '../../services/notifications/context-utils';
 import { PlayerIndex } from '@shared/game-engine';
 import { fromEngineMove } from '@shared/app/models/Move';
+import { autoLocale } from '../../../shared/app/i18n';
 
 const props = defineProps({
     hostedGameClient: {
@@ -34,13 +35,13 @@ const props = defineProps({
         required: true,
     },
     gameView: {
-        type: Object as PropType<null | GameView>,
-        required: false,
-        default: null,
+        type: Object as PropType<GameView>,
+        required: true,
     },
 });
 
-const { hostedGameClient, gameView } = toRefs(props);
+const { gameView } = props;
+const { hostedGameClient } = toRefs(props);
 const { round, abs } = Math;
 
 const emits = defineEmits([
@@ -55,6 +56,7 @@ if (null === loggedInPlayer) {
     throw new Error('Unexpected null logged in player');
 }
 
+const formatChatDateHeader = (date: Date): string => intlFormat(date, { day: 'numeric', month: 'long' }, { locale: autoLocale() });
 const formatHour = (date: Date): string => `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
 const playerColor = (player: Player): string => {
     const index = hostedGameClient.value.getPlayerIndex(player);
@@ -115,22 +117,35 @@ const shouldDisplayHexworldLink = (): boolean => {
     return false;
 };
 
+const generateHexworldLink = () => gameToHexworldLink(
+    hostedGameClient.value.getGame(),
+    gameView.getComputedBoardOrientation(),
+);
+
+const hexworldLink = ref(generateHexworldLink());
+
+watchEffect(() => {
+    hexworldLink.value = generateHexworldLink();
+});
+
+gameView.on('orientationChanged', () => hexworldLink.value = generateHexworldLink());
+
+/*
+ * SGF download
+ */
 const downloadSGF = (): void => {
     const game = hostedGameClient.value.getGame();
     const players = hostedGameClient.value.getPlayers();
 
     const filename = [
-        'hex',
+        'playhex',
         game.getStartedAt().toISOString().substring(0, 10),
         pseudoString(players[0], 'slug'),
         'VS',
         pseudoString(players[1], 'slug'),
     ].join('-') + '.sgf';
 
-    downloadString(gameToSGF(game, {
-        PB: pseudoString(players[0], 'pseudo'),
-        PW: pseudoString(players[1], 'pseudo'),
-    }), filename);
+    downloadString(hostedGameToSGF(hostedGameClient.value.getHostedGame()), filename);
 };
 
 /*
@@ -266,6 +281,12 @@ const gameAnalyze = analyzeStore.getAnalyze(gameId);
 const doAnalyzeGame = async () => {
     analyzeStore.loadAnalyze(gameId, true);
 };
+
+const timeControlComponent = ref<typeof AppGameAnalyze>();
+
+gameView.on('movesHistoryCursorChanged', cursor => {
+    timeControlComponent.value?.selectMove(cursor);
+});
 
 /*
  * Ratings
@@ -470,7 +491,7 @@ const shouldEnablePass = (): boolean => {
                     type="button"
                     class="btn btn-sm btn-outline-primary me-2 mb-2"
                     target="_blank"
-                    :href="gameToHexworldLink(hostedGameClient.getGame(), gameView?.getComputedBoardOrientation())"
+                    :href="hexworldLink"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -519,6 +540,8 @@ const shouldEnablePass = (): boolean => {
 
                     <input type="radio" class="btn-check" v-model="localSettings.selectedBoardOrientation" value="portrait" id="btn-orientation-portrait" autocomplete="off">
                     <label class="btn btn-outline-primary" for="btn-orientation-portrait">{{ $t('portrait') }}</label>
+
+                    <router-link class="btn btn-outline-primary" :to="{ name: 'settings', hash: '#board-orientation' }"><BIconGear /></router-link>
                 </div>
 
                 <!-- Pass -->
@@ -541,19 +564,19 @@ const shouldEnablePass = (): boolean => {
 
                 <!-- Request analyze -->
                 <div v-if="null === gameAnalyze" class="text-center">
-                    <button class="btn btn-sm btn-primary my-2" @click="doAnalyzeGame()">{{ $t('game_analyze.analyze_by_ai') }}</button>
+                    <button class="btn btn-sm btn-primary my-2" @click="doAnalyzeGame()">{{ $t('game_analysis.request_analysis') }}</button>
                 </div>
 
                 <!-- Waiting results -->
                 <p v-else-if="null === gameAnalyze.endedAt" class="text-center analyze-min-height">
-                    {{ $t('game_analyze.requested') }}
+                    {{ $t('game_analysis.requested') }}
                     <br>
                     <small class="text-body-secondary">{{ formatDistanceToNow(gameAnalyze.startedAt, { addSuffix: true }) }}</small>
                 </p>
 
                 <!-- Errored, try again -->
                 <p v-else-if="null === gameAnalyze.analyze" class="text-center text-warning analyze-min-height">
-                    {{ $t('game_analyze.errored') }}
+                    {{ $t('game_analysis.errored') }}
                     <button class="btn btn-sm btn-primary my-2" @click="doAnalyzeGame()">{{ $t('try_again') }}</button>
                 </p>
 
@@ -561,16 +584,17 @@ const shouldEnablePass = (): boolean => {
                 <div v-else class="analyze-min-height">
                     <!-- How it works link -->
                     <small>
-                        {{ $t('game_analyze.analyze_by_ai') }}
+                        {{ $t('game_analysis.game_analysis') }}
                         <router-link
                             :to="{ name: 'analysis-details' }"
                             class="text-decoration-none align-text-bottom"
-                            :title="$t('game_analyze.how_it_works')"
-                            :aria-label="$t('game_analyze.how_it_works')"
+                            :title="$t('game_analysis.how_it_works')"
+                            :aria-label="$t('game_analysis.how_it_works')"
                         ><BIconInfoCircle /></router-link>
                     </small>
+
                     <!-- Anayze graph -->
-                    <AppGameAnalyze :analyze="gameAnalyze.analyze" />
+                    <AppGameAnalyze :analyze="gameAnalyze.analyze" :gameView />
                 </div>
 
             </div>
@@ -586,17 +610,27 @@ const shouldEnablePass = (): boolean => {
             <div class="chat-messages" ref="chatMessagesElement">
                 <div class="container-fluid">
                     <div
-                        v-for="message in hostedGameClient.getChatMessages()"
-                        :key="message.createdAt.getTime()"
+                        v-for="message, key in hostedGameClient.getRichChatMessages()"
+                        :key
                         class="chat-message"
+                        :class="(message instanceof ChatMessage) ? '' : `chat-header chat-header-${message.type}`"
                     >
-                        <span class="time text-body-secondary">{{ formatHour(message.createdAt) }}</span>
-                        <span>&nbsp;</span>
-                        <span class="player" v-if="message.player"><AppPseudo :player="message.player" :classes="playerColor(message.player)" /></span>
-                        <span class="player fst-italic" v-else>{{ $t('system') }}</span>
-                        <span>&nbsp;</span>
-                        <!-- eslint-disable-next-line vue/no-v-html message.content is sanitized for XSS, see renderMessage() -->
-                        <span class="content" v-html="renderMessage(message.content)"></span>
+                        <template v-if="(message instanceof ChatMessage)">
+                            <span class="time text-body-secondary">{{ formatHour(message.createdAt) }}</span>
+                            <span>&nbsp;</span>
+                            <span class="player" v-if="message.player"><AppPseudo :player="message.player" :classes="playerColor(message.player)" /></span>
+                            <span class="player fst-italic" v-else>{{ $t('system') }}</span>
+                            <span>&nbsp;</span>
+                            <!-- eslint-disable-next-line vue/no-v-html message.content is sanitized for XSS, see renderMessage() -->
+                            <span class="content" v-html="renderMessage(message.content)"></span>
+                        </template>
+
+                        <template v-else-if="message.type === 'move'">
+                            <button class="btn btn-link btn-sm header-move text-secondary" @click="gameView?.setMovesHistoryCursor(message.moveNumber - 1)">{{ $t('move_number', { n: message.moveNumber }) }}</button>
+                        </template>
+                        <template v-else-if="message.type === 'date'">
+                            <small class="header-date text-secondary mt-1">{{ formatChatDateHeader(message.date) }}</small>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -691,4 +725,8 @@ const shouldEnablePass = (): boolean => {
 
         > *
             margin-left 1em
+
+.chat-messages
+    .chat-header-move
+        text-align center
 </style>

@@ -1,0 +1,277 @@
+{
+    "lobby": {
+        "join_a_game": "Únete a una partida",
+        "no_playing_games": "En este momento no hay partidas en curso.",
+        "no_waiting_games": "En este momento no hay partidas disponibles ¡Crea una!",
+        "watch_current_games": "Ver partidas en curso"
+    },
+    "game": {
+        "opponent": "Contrincante",
+        "host": "Anfitrión",
+        "board_size": "Tamaño del tablero",
+        "time_control": "Control de tiempo",
+        "rules": "Reglas",
+        "accept": "Aceptar",
+        "blue": "Azul",
+        "finished": "Finalizada",
+        "review": "Revisar",
+        "won": "Ganada",
+        "outcome": "Resultado",
+        "lost": "Perdida",
+        "watch": "Observar",
+        "size": "Tamaño",
+        "board": "Tablero",
+        "played": "Jugada",
+        "red": "Rojo",
+        "started": "Empezada",
+        "created": "Creada",
+        "playing": "Jugando",
+        "title_waiting": "A la espera de un adversario: organizado por",
+        "title_your_turn": "¡Tu turno!"
+    },
+    "game_rules": {
+        "host_plays_first": "El anfitrión juega primero",
+        "no_swap": "Sin intercambio",
+        "normal": "normal",
+        "host_plays_second": "El anfitrión juega en segundo lugar"
+    },
+    "create_game": {
+        "custom_size": "Personalizado",
+        "more_options": "Más opciones",
+        "less_options": "Menos opciones"
+    },
+    "player_settings": {
+        "title": "Ajustes"
+    },
+    "background_theme": {
+        "title": "Tema",
+        "dark": "Oscuro",
+        "light": "Claro"
+    },
+    "time_control": {
+        "use": "Usar {{type}}",
+        "byo_yomi": "Byo-Yomi",
+        "fischer": "Fischer",
+        "fischer_capped": "Fischer tapado",
+        "periods": "Periodos",
+        "fast": "Rápido",
+        "normal": "Normal",
+        "long": "Largo",
+        "custom": "Personalizado",
+        "periods_time": "Periodo de tiempo",
+        "initial_time": "Tiempo inicial",
+        "time_increment": "Incremento de tiempo"
+    },
+    "i_play": {
+        "title": "Yo juego",
+        "random": "Aleatorio",
+        "first": "Primero",
+        "second": "Segundo"
+    },
+    "swap_rule": "Regla de intercambio",
+    "toggle_coords": "Alternar la visualización de coordenadas",
+    "share_game": "Compartir juego",
+    "copied!": "¡Copiado!",
+    "not_copied": "Error al copiar, haz clic con el botón derecho o mantén presionado",
+    "log_out": "Cerrar sesión",
+    "log_in": "Iniciar sesión",
+    "sign_up": "Regístrate",
+    "feedback": "Comentarios",
+    "hex_links": "Recursos sobre Hex",
+    "project_under_development": "Proyecto en desarrollo",
+    "privacy_policy": "Política de privacidad",
+    "already_have_account_login_instead_link_label": "Iniciar sesión",
+    "no_account_sign_up_instead_link_label": "Regístrate",
+    "add_your_language": "¿Falta tu idioma? ¡{link}!",
+    "add_your_language_link": "Añádelo con Weblate",
+    "show_coords_by_default": "Mostrar coordenadas por defecto",
+    "username": "Nombre de usuario",
+    "password": "Contraseña",
+    "account_created_on": "Cuenta creada el {{date}}",
+    "player_current_games": "Partidas en curso",
+    "initializing_game": "Iniciando partida…",
+    "waiting_for_an_opponent": "Esperando contrincante…",
+    "workers": {
+        "slow_worker": "En este momento, no hay ningún trabajador rápido en línea. Solo hay disponible una IA limitada.",
+        "see_how_to_spawn_a_worker": "Ver cómo calcular los movimientos de la IA para PlayHex desde mi ordenador",
+        "no_worker": "Ningún trabajador puede calcular movimientos en este momento. Solo hay bots aleatorios disponibles."
+    },
+    "game_analysis": {
+        "game_analysis": "Partida analizada por IA",
+        "requested": "Análisis solicitado…",
+        "errored": "¡El análisis falló!",
+        "best_move": "mejor jugada",
+        "best": "mejor:",
+        "how_it_works": "Cómo funciona",
+        "request_analysis": "Solicitar análisis de IA"
+    },
+    "close": "Cerrar",
+    "ranked": "Clasificatoria",
+    "rating": "Clasificación: {{rating}}",
+    "new_game": "Nueva partida",
+    "no_such_player": "Parece que no existe tal jugador.",
+    "n_online_players": "En línea ({{n}})",
+    "guest": "Invitad@",
+    "1v1_ranked": {
+        "title": "1 contra 1",
+        "create": "Crear 1 contra 1"
+    },
+    "1v1_friendly": {
+        "title": "Personalizar 1 contra 1",
+        "create": "Crear 1 contra 1 personalizado"
+    },
+    "1vAI_ranked": {
+        "create": "Jugar partida clasificada contra IA",
+        "title": "Clasificatoria contra IA"
+    },
+    "1vAI_friendly": {
+        "create": "Jugar contra IA",
+        "title": "Jugar contra IA"
+    },
+    "1vAI_offline": {
+        "title": "IA sin conexión",
+        "create": "Jugar contra la IA sin conexión"
+    },
+    "offline_game_explain": "Los juegos sin conexión sólo se ejecutan en su dispositivo, de modo que puede jugar sin conexión a Internet. El servidor PlayHex no está involucrado.",
+    "loading_game": "Cargando partida…",
+    "tournament": "Torneo",
+    "now!": "¡Ahora!",
+    "register_on_challonge": "Inscribirte en Challonge",
+    "system": "Sistema",
+    "unread_messages": "mensajes sin leer",
+    "send_chat_message": "Enviar",
+    "landscape": "Horizontal",
+    "portrait": "Vertical",
+    "resign": "Abandonar",
+    "auto": "Auto",
+    "board_orientation": {
+        "description": "Rotación del tablero preferida para las orientaciones de pantalla vertical y horizontal.",
+        "title": "Orientación",
+        "flat": "Plana",
+        "flat_2": "Plana 2",
+        "diamond": "Diamante"
+    },
+    "shading_patterns": {
+        "types": {
+            "concentrical_rings": "Círculos concéntricos (Hexworld)",
+            "height_5_lines": "Altura 5 líneas",
+            "single_ring": "Anillo único",
+            "custom": "Personalizado",
+            "tricolor_checkerboard": "Tablero tricolor",
+            "null": "Ninguno"
+        },
+        "custom_expression": "Expresión personalizada",
+        "title": "Patrón de sombreado",
+        "visibility": "Visibilidad del patrón de sombreado",
+        "help_custom": "Expresión matemática para el patrón de sombreado personalizado.<br>La expresión debe evaluarse como un número entre 0 (sin sombreado) y 1 (totalmente sombreado) para una celda determinada (fila, columna). Puede utilizar, por ejemplo, 0,5 para patrones de sombreado tricolor. <code>true</code> y <code>false</code> son lo mismo que <code>1</code> y <code>0</code>.<br>Las siguientes variables están disponibles:<br>- <code>row</code> y <code>col</code> (o <code>r</code> y <code>c</code>) para los números de fila y columna, comenzando en 0.<br>- <code>size</code> (o <code>s</code>) para el tamaño del tablero.<br>- <code>distToSide</code> para la distancia de la celda actual a su lado más cercano.<br>Consulte la lista de operadores disponibles en https://github.com/silentmatt/expr-eval?tab=readme-ov-file#expression-syntax<br>Ejemplos:<br>- Círculos concéntricos: <code>distToSide % 2</code><br>- Tablero de ajedrez tricolor: <code>((size + row - col) % 3) / 2</code><br>- Disco con radio sqrt(20): <code>o = tamaño / 2; (fila - o) ^ 2 + (col - o) ^ 2 < 20</code><br>Abra la consola de JavaScript (F12 o ⌥⌘I) para ver los errores de la ejecución de su expresión."
+    },
+    "show_44_dots": "Mostrar puntos en celdas 4-4",
+    "preview": "Vista previa",
+    "change_password": "Cambiar contraseña",
+    "old_password": "Contraseña antigua",
+    "new_password": "Contraseña nueva",
+    "confirm_new_password": "Confirmar la nueva contraseña",
+    "update_password": "Actualizar la contraseña",
+    "contribute": "Colaborar",
+    "contributors": "Colaboradores",
+    "player_made_a_move": "{{player}} hizo una jugada",
+    "game_with_player_has_started": "La partida con {{player}} ha comenzado",
+    "last_move": "Última jugada",
+    "undo": {
+        "undo_move": "Recuperación",
+        "accept": "Aceptar deshacer",
+        "reject": "Rechazar"
+    },
+    "ping": {
+        "date_shift_ms": "Ajustes temporales: {{ms}}ms",
+        "ping_ms": "Ping: {{ms}}ms"
+    },
+    "game_candency": {
+        "blitz": "Blitz",
+        "normal": "Normal",
+        "correspondence": "Correspondencia"
+    },
+    "confirm_move": {
+        "title": "Confirmar jugada",
+        "button_label": "Confirmar jugada",
+        "ask_confirmation": "Pedir confirmación",
+        "description": "Para evitar errores, puedes pedir confirmación antes de enviar una jugada.",
+        "button_label_short": "Confirmar",
+        "send_immediately": "Enviar inmediatamente"
+    },
+    "rematch": {
+        "label": "Revancha",
+        "accept": "Aceptar revancha",
+        "view": "Ver revancha"
+    },
+    "short_time_unit": {
+        "day": "d",
+        "hour": "h",
+        "minute": "min",
+        "second": "s"
+    },
+    "outcome": {
+        "resign": "abandonar",
+        "time": "tiempo agotado",
+        "win": "victoria",
+        "loss": "derrota",
+        "forfeit": "renunciar"
+    },
+    "player_won_by": {
+        "default": "¡{player} ganó!",
+        "time": "¡{player} ganó por tiempo!",
+        "forfeit": "¡{player} ganó por abandono!",
+        "resign": "{player} ganó!"
+    },
+    "player_wins_by": {
+        "default": "¡{player} gana!",
+        "time": "¡{jugador} gana por tiempo!",
+        "resign": "¡{player} gana!",
+        "forfeit": "¡{player} gana por abandono!"
+    },
+    "lobby_title": "Sala de espera",
+    "last_change": "Última modificación: {{date}}",
+    "create_account": "Crear una cuenta",
+    "license_agpl": "Licencia AGPL-3.0",
+    "already_have_account_login_instead": "¿Ya tienes una cuenta? {login}",
+    "no_account_sign_up_instead": "¿No tienes una cuenta? Por favor {signUp}",
+    "player_game_history": "Historial de la partida",
+    "enable_swap_rule": "Permitir intercambio de piezas",
+    "2dots": "{{s}}:",
+    "waiting": "esperando…",
+    "game_finished_overlay": {
+        "title": "Partida terminada"
+    },
+    "confirm_overlay": {
+        "confirmation": "Confirmación",
+        "are_you_sure?": "¿Seguro?"
+    },
+    "toggle_coords_short": "Coordenadas",
+    "game_created_by_player_time_ago": "Partida creada por {player}, {timeAgo}.",
+    "game_was_created_by_player_time_ago": "Partida creada por {player}, {timeAgo}.",
+    "game_has_been_canceled": "Partida cancelada.",
+    "try_again": "Inténtalo de nuevo",
+    "yes": "Sí",
+    "no": "No",
+    "cancel": "Cancelar",
+    "language": "Idioma",
+    "pass": "Pasar",
+    "load_more": "Cargar más",
+    "players": "Jugadores",
+    "player": "jugador",
+    "finished_games": "Partidas terminadas",
+    "see_progression_on_challonge": "Ver progresión en Challonge",
+    "chat": "Chat",
+    "move": "jugada",
+    "chat_message_placeholder": "Mensaje…",
+    "n_characters_one": "{{count}} carácter",
+    "n_characters_many": "{{count}} caracteres",
+    "n_characters_other": "{{count}} caracteres",
+    "move_number": "mover {{n}}",
+    "game_state": {
+        "created": "Creado",
+        "playing": "Jugando",
+        "canceled": "Cancelado",
+        "ended": "Terminado"
+    }
+}

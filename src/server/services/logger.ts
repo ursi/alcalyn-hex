@@ -1,5 +1,5 @@
 import winston, { Logger } from 'winston';
-import LokiTransport from 'winston-loki';
+import { addSentryLoggerIfConfigured } from './logger-sentry';
 
 type SyslogLevels =
     'debug'
@@ -35,6 +35,7 @@ type SyslogLevels =
  */
 const logger = winston.createLogger({
     levels: winston.config.syslog.levels,
+    level: 'development' === process.env.NODE_ENV ? 'debug' : 'info',
     transports: [
         new winston.transports.Console({
             handleExceptions: true,
@@ -46,26 +47,7 @@ const logger = winston.createLogger({
     ],
 });
 
-const { LOKI_HOST, LOKI_USER, LOKI_TOKEN, LOKI_SERVICE_NAME, LOKI_LOG_LEVEL } = process.env;
 
-if (LOKI_HOST) {
-    const basicAuth = LOKI_USER && LOKI_TOKEN
-        ? `${LOKI_USER}:${LOKI_TOKEN}`
-        : undefined
-    ;
-
-    logger.add(new LokiTransport({
-        host: LOKI_HOST,
-        basicAuth,
-        labels: { service_name: LOKI_SERVICE_NAME },
-        level: LOKI_LOG_LEVEL,
-        handleExceptions: true,
-        batching: false,
-        onConnectionError(error) {
-            // eslint-disable-next-line no-console
-            console.error('loki transport connect error', error);
-        },
-    }));
-}
+addSentryLoggerIfConfigured(logger);
 
 export default logger as Pick<Logger, SyslogLevels>;
