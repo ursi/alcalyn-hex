@@ -173,11 +173,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1724268463,
-        "narHash": "sha256-no4lD730a/uipW5V+WJSSpyiEM5EioKEgcfZi2kn4e8=",
+        "lastModified": 1728354638,
+        "narHash": "sha256-v2Fi/M1K06qnPqa6WsOoD18ZRBRPEgJ/Ca8wR2QnmKc=",
         "owner": "platonic",
         "repo": "shelpers",
-        "rev": "267d9117e150e1cc224dad30d49d9a921e370ebb",
+        "rev": "e9c2a3ddf7853948c3e8540c8617ae5b7051b759",
         "type": "gitlab"
       },
       "original": {
