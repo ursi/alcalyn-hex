@@ -27,12 +27,15 @@
         "created": "Creada",
         "playing": "Jugando",
         "title_waiting": "A la espera de un adversario: organizado por",
-        "title_your_turn": "¡Tu turno!"
+        "title_your_turn": "¡Tu turno!",
+        "title": "Juego",
+        "info": "Información",
+        "duration": "Duración"
     },
     "game_rules": {
         "host_plays_first": "El anfitrión juega primero",
         "no_swap": "Sin intercambio",
-        "normal": "normal",
+        "normal": "estándar",
         "host_plays_second": "El anfitrión juega en segundo lugar"
     },
     "create_game": {
@@ -217,12 +220,6 @@
         "loss": "derrota",
         "forfeit": "renunciar"
     },
-    "player_won_by": {
-        "default": "¡{player} ganó!",
-        "time": "¡{player} ganó por tiempo!",
-        "forfeit": "¡{player} ganó por abandono!",
-        "resign": "{player} ganó!"
-    },
     "player_wins_by": {
         "default": "¡{player} gana!",
         "time": "¡{jugador} gana por tiempo!",
@@ -246,7 +243,7 @@
         "confirmation": "Confirmación",
         "are_you_sure?": "¿Seguro?"
     },
-    "toggle_coords_short": "Coordenadas",
+    "toggle_coords_short": "Alternar coordenadas",
     "game_created_by_player_time_ago": "Partida creada por {player}, {timeAgo}.",
     "game_was_created_by_player_time_ago": "Partida creada por {player}, {timeAgo}.",
     "game_has_been_canceled": "Partida cancelada.",
@@ -273,5 +270,20 @@
         "playing": "Jugando",
         "canceled": "Cancelado",
         "ended": "Terminado"
-    }
+    },
+    "player_loses_reason": {
+        "resign": "{player} abandonó.",
+        "default": "{player} pierde(n).",
+        "time": "{player} agotó el tiempo.",
+        "forfeit": "{player} pierde."
+    },
+    "handicap": {
+        "title": "Handicap",
+        "none": "ninguno",
+        "handicap_for_player": "{{n}} para {{player}}"
+    },
+    "explore": "Explorar",
+    "friendly": "Amigable",
+    "moves": "Movimientos",
+    "force_board_orientation_mode": "Forzar la visualización del tablero en horizontal o vertical para esta pantalla"
 }

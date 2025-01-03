@@ -8,6 +8,10 @@ import AppPseudo from '../AppPseudo.vue';
 
 const { loggedInPlayer } = storeToRefs(useAuthStore());
 
+/* global SITE_TITLE_SUFFIX */
+// @ts-ignore: SITE_TITLE_SUFFIX replaced at build time by webpack.
+const siteTitleSuffix: undefined | string = SITE_TITLE_SUFFIX;
+
 /*
  * My turn notification
  */
@@ -50,7 +54,7 @@ const color = (): string => null === mostUrgentGame.value
 <template>
     <nav class="menu-top navbar bg-body-tertiary">
         <div class="container-fluid justify-content-space-between">
-            <router-link to="/" class="navbar-brand" aria-label="Go to PlayHex lobby">Play<span class="text-danger">Hex</span></router-link>
+            <router-link to="/" class="navbar-brand" aria-label="Go to PlayHex lobby">Play<span class="text-danger">Hex</span><small v-if="siteTitleSuffix" class="text-body-secondary"> - {{ siteTitleSuffix }}</small></router-link>
 
             <span class="my-turn-notif">
                 <component
@@ -58,16 +62,20 @@ const color = (): string => null === mostUrgentGame.value
                     class="hexagon"
                     :class="color()"
                 />
-                <a
-                    href="#"
+                <button
+                    class="btn-my-turn btn btn-link"
                     @click="goToMostUrgentGame()"
                     :class="isFilled() ? 'text-white' : 'text-body'"
-                >{{ myTurnCount }}</a>
+                >{{ myTurnCount }}</button>
             </span>
 
             <p class="nav-player-item">
                 <template v-if="loggedInPlayer">
-                    <BIconPersonFill /> <router-link :to="{ name: 'player', params: { slug: loggedInPlayer.slug } }"><AppPseudo :player="loggedInPlayer" /></router-link>
+                    <BIconPersonFill />
+                    <span>&nbsp;</span>
+                    <router-link :to="{ name: 'player', params: { slug: loggedInPlayer.slug } }">
+                        <AppPseudo :player="loggedInPlayer" />
+                    </router-link>
                 </template>
                 <template v-else>logging in…</template>
             </p>
@@ -94,12 +102,12 @@ nav
     justify-content center
     align-items center
 
-    svg, a
+    svg, .btn-my-turn
         position absolute
         text-align center
         width 100%
 
-    a
+    .btn-my-turn
         margin-top -0.05em
         font-size 0.8em
         text-decoration none

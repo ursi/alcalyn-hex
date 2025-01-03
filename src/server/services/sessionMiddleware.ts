@@ -1,6 +1,7 @@
 import session from 'express-session';
 import RedisStore from 'connect-redis';
 import { createClient } from 'redis';
+import type { RequestHandler } from 'express';
 
 const { SESSION_SECRET, SESSION_HTTPS_ONLY } = process.env;
 
@@ -19,7 +20,7 @@ const sessionOptions: session.SessionOptions = {
     },
 };
 
-const { REDIS_URL } = process.env;
+const { REDIS_URL, REDIS_PREFIX } = process.env;
 
 if (REDIS_URL) {
     const redisClient = createClient({
@@ -30,8 +31,8 @@ if (REDIS_URL) {
 
     sessionOptions.store = new RedisStore({
         client: redisClient,
-        prefix: 'hex-session:',
+        prefix: (REDIS_PREFIX ?? 'hex') + '-session:',
     });
 }
 
-export const sessionMiddleware = session(sessionOptions);
+export const sessionMiddleware: RequestHandler = session(sessionOptions);

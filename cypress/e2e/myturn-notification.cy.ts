@@ -17,18 +17,19 @@ const isEmptyHexagon = ($element: JQuery<HTMLElement>): boolean => {
 
 describe('My turn notification', () => {
     it('displays 1 and my color when I must play on a game', () => {
-        cy.intercept('/api/games', {
-            fixture: 'myturn-notification/single-games.json',
-        });
+        cy.mockSocketIO();
         cy.intercept('/api/auth/me-or-guest', {
             fixture: 'myturn-notification/single-guest.json',
         });
 
         cy.visit('/');
 
+        cy.receivePlayerGamesUpdate('myturn-notification/single-games.json');
+        cy.wait(50); // Needs to wait before myTurn count updates, not sure why
+
         cy.contains('Guest 1817');
 
-        cy.get('.my-turn-notif a').then($a => {
+        cy.get('.my-turn-notif .btn-my-turn').then($a => {
             if ('1' !== $a.text()) {
                 throw new Error('I should have 1 game where it is my turn to play');
             }
@@ -46,18 +47,19 @@ describe('My turn notification', () => {
     });
 
     it('displays 0 and default color, even when I have a canceled game', () => {
-        cy.intercept('/api/games', {
-            fixture: 'myturn-notification/canceled-games.json',
-        });
+        cy.mockSocketIO();
         cy.intercept('/api/auth/me-or-guest', {
             fixture: 'myturn-notification/canceled-guest.json',
         });
 
         cy.visit('/');
 
+        cy.receivePlayerGamesUpdate('myturn-notification/canceled-games.json');
+        cy.wait(50); // Needs to wait before myTurn count updates, not sure why
+
         cy.contains('Guest 8201');
 
-        cy.get('.my-turn-notif a').then($a => {
+        cy.get('.my-turn-notif .btn-my-turn').then($a => {
             if ('0' !== $a.text()) {
                 throw new Error('I should have no game where it is my turn to play');
             }
@@ -75,18 +77,19 @@ describe('My turn notification', () => {
     });
 
     it('displays 1 and my color, empty hexagon, when I have a running game, but not my turn', () => {
-        cy.intercept('/api/games', {
-            fixture: 'myturn-notification/not-my-turn-games.json',
-        });
+        cy.mockSocketIO();
         cy.intercept('/api/auth/me-or-guest', {
             fixture: 'myturn-notification/not-my-turn-guest.json',
         });
 
         cy.visit('/');
 
+        cy.receivePlayerGamesUpdate('myturn-notification/not-my-turn-games.json');
+        cy.wait(50); // Needs to wait before myTurn count updates, not sure why
+
         cy.contains('Guest 3248');
 
-        cy.get('.my-turn-notif a').then($a => {
+        cy.get('.my-turn-notif .btn-my-turn').then($a => {
             if ('0' !== $a.text()) {
                 throw new Error('I should have no game where it is my turn to play');
             }
@@ -131,7 +134,7 @@ describe('My turn notification', () => {
 
         cy.contains('random bot');
 
-        cy.get('.my-turn-notif a').then($a => {
+        cy.get('.my-turn-notif .btn-my-turn').then($a => {
             if ('1' !== $a.text()) {
                 throw new Error('I should have one game where I have to play');
             }

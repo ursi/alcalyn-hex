@@ -25,13 +25,13 @@ export default class AutoCancelStaleGames
 {
     private getPlayerActiveGames: GetPlayerActiveGamesCallback;
 
-    private playerStaleGamesTimeouts: { [publicId: string]: NodeJS.Timeout } = {};
+    private playerStaleGamesTimeouts: { [publicId: string]: ReturnType<typeof setTimeout> } = {};
 
     constructor(
         private onlinePlayersService: OnlinePlayersService,
-        private waitAfterDisconnect: number = AUTO_CANCEL_STALE_GAMES_AFTER
+        private waitAfterDisconnect: number = AUTO_CANCEL_STALE_GAMES_AFTER?.match(/^\d+$/)
             ? parseInt(AUTO_CANCEL_STALE_GAMES_AFTER, 10)
-            : 30000
+            : -1
         ,
     ) {}
 
@@ -46,6 +46,11 @@ export default class AutoCancelStaleGames
      */
     start(getPlayerActiveGames: GetPlayerActiveGamesCallback, loadedGames: HostedGameServer[]): void
     {
+        if (this.waitAfterDisconnect <= 0) {
+            logger.info('Not starting auto cancel games because disabled.');
+            return;
+        }
+
         logger.info('Auto cancel stale games enabled', { waitAfterDisconnect: this.waitAfterDisconnect });
 
         this.getPlayerActiveGames = getPlayerActiveGames;
@@ -79,7 +84,7 @@ export default class AutoCancelStaleGames
 
             // Created game but host disconnected
             if ('created' === game.getState()) {
-                const player = game.toData().host;
+                const player = game.getHostedGame().host;
 
                 if (!this.onlinePlayersService.isOnline(player)) {
                     add(player, game);
@@ -155,7 +160,7 @@ export default class AutoCancelStaleGames
 
         this.playerStaleGamesTimeouts[player.publicId] = setTimeout(() => {
             for (const game of playerStaleGames) {
-                logger.info('Cancel game because stale', { gameId: game.getId() });
+                logger.info('Cancel game because stale', { gameId: game.getPublicId() });
 
                 game.systemCancel();
             }
@@ -188,7 +193,7 @@ export default class AutoCancelStaleGames
             const playerStaleGames = staleGames[playerPublicId];
 
             log += `\n  Player ${playerStaleGames.player.pseudo} (${playerStaleGames.player.publicId}) has ${playerStaleGames.staleGames.length}:`;
-            log += playerStaleGames.staleGames.map(game => `\n    ${game.getId()} (${game.getState()})`).join('');
+            log += playerStaleGames.staleGames.map(game => `\n    ${game.getPublicId()} (${game.getState()})`).join('');
         }
 
         logger.info(`Found players with stale games:${log}`);

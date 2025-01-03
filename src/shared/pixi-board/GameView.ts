@@ -1,5 +1,5 @@
 import { Game, Move, PlayerIndex, Coords } from '../game-engine';
-import { Application, Container, FillGradient, Graphics, PointData, Text, TextStyle } from 'pixi.js';
+import { Application, Container, Graphics, PointData, Text, TextStyle } from 'pixi.js';
 import Hex from './Hex';
 import { Theme, themes } from './BoardTheme';
 import { TypedEmitter } from 'tiny-typed-emitter';
@@ -14,7 +14,7 @@ const SQRT_3_2 = sqrt(3) / 2;
 const PI_3 = PI / 3;
 const PI_6 = PI / 6;
 
-type OrientationMode = 'landscape' | 'portrait';
+export type OrientationMode = 'landscape' | 'portrait';
 
 /**
  * Integer, every PI/6.
@@ -232,6 +232,9 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         return this.ready();
     }
 
+    /**
+     * When pixi app created, board drawn, and mounted with `mount()`.
+     */
     async ready(): Promise<void>
     {
         return this.initPromise.promise;
@@ -333,11 +336,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         this.createAndAddHexes();
         this.addAllMoves();
         this.highlightSidesFromGame();
-
-        if (null !== this.previewedMove) {
-            const { move, playerIndex } = this.previewedMove;
-            this.previewMove(move, playerIndex);
-        }
+        this.showPreviewedMove();
 
         this.gameContainer.addChild(
             this.swapable,
@@ -600,13 +599,13 @@ export default class GameView extends TypedEmitter<GameViewEvents>
                 }
             }
 
-            this.removePreviewMove();
+            this.removePreviewedMove();
             this.highlightLastMove();
             this.highlightSidesFromGame();
         });
 
         this.game.on('undo', async undoneMoves => {
-            this.removePreviewMove(undoneMoves);
+            this.removePreviewedMove(undoneMoves);
 
             for (let i = 0; i < undoneMoves.length; ++i) {
                 const move = undoneMoves[i];
@@ -855,16 +854,10 @@ export default class GameView extends TypedEmitter<GameViewEvents>
     {
         const container = new Container();
 
-        // TODO tmp, pixi bug workaround. Remove this and just set fill = this.options.theme.textColor
-        // with this is fixed: https://github.com/pixijs/pixijs/discussions/10444
-        const fill = new FillGradient(0, 0, 1, 1);
-        fill.addColorStop(0, this.options.theme.textColor);
-        fill.addColorStop(1, this.options.theme.textColor);
-
         const coordsTextStyle = new TextStyle({
             fontFamily: 'Arial',
             fontSize: Hex.RADIUS * 0.6,
-            fill,
+            fill: this.options.theme.textColor,
         });
 
         const createText = (string: string, x: number, y: number): Text => {
@@ -982,32 +975,19 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         return this.previewedMove;
     }
 
-    previewMove(move: Move, playerIndex: PlayerIndex): this
+    setPreviewedMove(move: Move, playerIndex: PlayerIndex): this
     {
-        if (null !== this.previewedMove && !this.previewedMove.move.sameAs(move)) {
-            this.removePreviewMove();
+        if (null !== this.previewedMove) {
+            if (this.previewedMove.move.sameAs(move) && playerIndex === this.previewedMove.playerIndex) {
+                return this;
+            }
+
+            this.removePreviewedMove();
         }
 
         this.previewedMove = { move, playerIndex };
 
-        switch (move.getSpecialMoveType()) {
-            case undefined:
-                this.hexes[move.row][move.col].previewMove(playerIndex);
-                break;
-
-            case 'swap-pieces': {
-                const swapCoords = this.game.getSwapCoords(false);
-
-                if (null === swapCoords) {
-                    throw new Error('Unexpected null swapCoords');
-                }
-
-                const { mirror, swapped } = swapCoords;
-
-                this.hexes[swapped.row][swapped.col].previewMove(1 - playerIndex as PlayerIndex);
-                this.hexes[mirror.row][mirror.col].previewMove(playerIndex);
-            }
-        }
+        this.showPreviewedMove();
 
         return this;
     }
@@ -1015,7 +995,7 @@ export default class GameView extends TypedEmitter<GameViewEvents>
     /**
      * @param undoneMoves In case of a move undo, pass them here so we can which was coords of undone moves to remove preview
      */
-    removePreviewMove(undoneMoves: null | Move[] = null): this
+    removePreviewedMove(undoneMoves: null | Move[] = null): this
     {
         if (null === this.previewedMove) {
             return this;
@@ -1038,6 +1018,37 @@ export default class GameView extends TypedEmitter<GameViewEvents>
         }
 
         return this;
+    }
+
+    /**
+     * Show previewed move from what is set in this.previewedMove
+     */
+    private showPreviewedMove(): void
+    {
+        if (null === this.previewedMove) {
+            return;
+        }
+
+        const { move, playerIndex } = this.previewedMove;
+
+        switch (move.getSpecialMoveType()) {
+            case undefined:
+                this.hexes[move.row][move.col].previewMove(playerIndex);
+                break;
+
+            case 'swap-pieces': {
+                const swapCoords = this.game.getSwapCoords(false);
+
+                if (null === swapCoords) {
+                    throw new Error('Unexpected null swapCoords');
+                }
+
+                const { mirror, swapped } = swapCoords;
+
+                this.hexes[swapped.row][swapped.col].previewMove(1 - playerIndex as PlayerIndex);
+                this.hexes[mirror.row][mirror.col].previewMove(playerIndex);
+            }
+        }
     }
 
     getMovesHistoryCursor(): null | number
@@ -1110,7 +1121,6 @@ export default class GameView extends TypedEmitter<GameViewEvents>
             }
         }
 
-        this.removePreviewMove();
         this.highlightLastMove(move);
     }
 

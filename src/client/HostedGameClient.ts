@@ -40,7 +40,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
 
     private richChat: RichChat;
 
-    private lowTimeNotificationThread: null | number = null;
+    private lowTimeNotificationThread: null | ReturnType<typeof setTimeout> = null;
 
     constructor(
         private hostedGame: HostedGame,
@@ -48,7 +48,7 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
     ) {
         super();
 
-        this.readMessages = hostedGame.chatMessages.length;
+        this.readMessages = hostedGame.chatMessages?.length ?? 0;
         this.richChat = new RichChat(hostedGame);
     }
 
@@ -152,6 +152,15 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         return this.hostedGame.hostedGameToPlayers[1 - this.hostedGame.gameData.winner].player;
     }
 
+    getStrictLoserPlayer(): Player
+    {
+        if (this.hostedGame.gameData?.winner !== 0 && this.hostedGame.gameData?.winner !== 1) {
+            throw new Error('getStrictWinnerPlayer(): No winner');
+        }
+
+        return this.hostedGame.hostedGameToPlayers[1 - this.hostedGame.gameData.winner].player;
+    }
+
     hasPlayer(player: Player): boolean
     {
         return this.hostedGame.hostedGameToPlayers.some(p => p.player.publicId === player.publicId);
@@ -204,12 +213,20 @@ export default class HostedGameClient extends TypedEmitter<HostedGameClientEvent
         return this.hostedGame.ratings ?? [];
     }
 
+    getRating(player: Player): null | Rating
+    {
+        return this.hostedGame.ratings
+            ?.find(r => r.player.publicId === player.publicId)
+            ?? null
+        ;
+    }
+
     /**
      * Update data and game from HostedGame
      */
     updateFromHostedGame(hostedGame: HostedGame): void
     {
-        this.hostedGame = hostedGame;
+        Object.assign(this.hostedGame, hostedGame);
     }
 
     getGame(): Game

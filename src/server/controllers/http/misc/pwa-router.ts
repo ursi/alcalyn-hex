@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { seo } from '../../../../shared/app/seo';
 
-export function pwaRouter() {
+export function pwaRouter(): Router {
     const router = Router();
 
     router.get('/pwa-manifest.json', async (_, res) => {
@@ -11,7 +11,6 @@ export function pwaRouter() {
             name: seo.title,
             description: seo.description,
             lang: 'en',
-            orientation: 'any',
             start_url: '/',
             theme_color: '#DC3545',
             background_color: '#212529',

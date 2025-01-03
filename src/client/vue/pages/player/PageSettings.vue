@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { BIconBrightnessHighFill, BIconMoonStarsFill, BIconCircleHalf, BIconPcDisplayHorizontal, BIconPhone, BIconLightningChargeFill, BIconAlarmFill, BIconCalendar, BIconAlphabet, BIconDot } from 'bootstrap-icons-vue';
-import useDarkLightThemeStore from '../../../stores/darkLightThemeStore';
+import usePlayerLocalSettingsStore from '../../../stores/playerLocalSettingsStore';
 import { storeToRefs } from 'pinia';
 import usePlayerSettingsStore from '../../../stores/playerSettingsStore';
 import useAuthStore from '../../../stores/authStore';
@@ -17,10 +17,11 @@ import { Player } from '../../../../shared/app/models';
 import AppBoard from '../../components/AppBoard.vue';
 import { CustomizedGameView } from '../../../services/CustomizedGameView';
 import { simulateTargetPseudoClassHandler } from '../../../services/simulateTargetPseudoClassHandler';
+import AppRhombus from '../../components/AppRhombus.vue';
 
 const updateSeoMeta = () => useSeoMeta({
     robots: 'noindex',
-    title: i18n.t('player_settings.title')
+    title: i18n.t('player_settings.title'),
 });
 
 updateSeoMeta();
@@ -29,7 +30,7 @@ i18n.on('languageChanged', () => updateSeoMeta());
 const playerSettingsStore = usePlayerSettingsStore();
 
 const { loggedInPlayer } = storeToRefs(useAuthStore());
-const { selectedTheme } = storeToRefs(useDarkLightThemeStore());
+const { localSettings } = storeToRefs(usePlayerLocalSettingsStore());
 const { playerSettings } = storeToRefs(playerSettingsStore);
 
 // Auto save when any setting changed
@@ -174,13 +175,13 @@ onUnmounted(() => {
             <h3>{{ $t('background_theme.title') }}</h3>
 
             <div class="btn-group" role="group" aria-label="Dark or light theme switcher">
-                <input type="radio" class="btn-check" v-model="selectedTheme" value="light" id="btn-theme-light" autocomplete="off">
+                <input type="radio" class="btn-check" v-model="localSettings.selectedTheme" value="light" id="btn-theme-light" autocomplete="off">
                 <label class="btn btn-outline-primary" for="btn-theme-light"><BIconBrightnessHighFill /> {{ $t('background_theme.light') }}</label>
 
-                <input type="radio" class="btn-check" v-model="selectedTheme" value="dark" id="btn-theme-dark" autocomplete="off">
+                <input type="radio" class="btn-check" v-model="localSettings.selectedTheme" value="dark" id="btn-theme-dark" autocomplete="off">
                 <label class="btn btn-outline-primary" for="btn-theme-dark"><BIconMoonStarsFill /> {{ $t('background_theme.dark') }}</label>
 
-                <input type="radio" class="btn-check" v-model="selectedTheme" value="auto" id="btn-theme-auto" autocomplete="off">
+                <input type="radio" class="btn-check" v-model="localSettings.selectedTheme" value="auto" id="btn-theme-auto" autocomplete="off">
                 <label class="btn btn-outline-primary" for="btn-theme-auto"><BIconCircleHalf /> {{ $t('auto') }}</label>
             </div>
         </div>
@@ -256,7 +257,7 @@ onUnmounted(() => {
                             <template v-for="orientation in landscapeOrientations" :key="orientation.value">
                                 <input type="radio" class="btn-check" v-model="playerSettings.orientationLandscape" :value="orientation.value" :id="'landscape-radio-' + orientation.value" autocomplete="off">
                                 <label class="btn" :for="'landscape-radio-' + orientation.value">
-                                    <div class="rhombus" :style="`transform: rotate(${orientation.value * 30}deg)`"></div>
+                                    <AppRhombus :orientation="orientation.value" />
                                     <br>
                                     {{ $t(orientation.labelTransKey) }}
                                 </label>
@@ -272,7 +273,7 @@ onUnmounted(() => {
                             <template v-for="orientation in portraitOrientations" :key="orientation.value">
                                 <input type="radio" class="btn-check" v-model="playerSettings.orientationPortrait" :value="orientation.value" :id="'portrait-radio-' + orientation.value" autocomplete="off">
                                 <label class="btn" :for="'portrait-radio-' + orientation.value">
-                                    <div class="rhombus" :style="`transform: rotate(${orientation.value * 30}deg)`"></div>
+                                    <AppRhombus :orientation="orientation.value" />
                                     <br>
                                     {{ $t(orientation.labelTransKey) }}
                                 </label>
@@ -383,21 +384,6 @@ onUnmounted(() => {
 <style lang="stylus" scoped>
 h3, h4
     margin 0 0 0.5em 0
-
-.rhombus::before
-    content ''
-    display block
-    border 0.5em solid
-    border-color #dc3545 #0d6efd
-    border-radius 0.2em
-    width 2.5em
-    height 2.5em
-    transform skew(30deg)
-
-.rhombus
-    display inline-block
-    margin 1em
-    transform rotate(150deg)
 
 .board-container
     width 300px

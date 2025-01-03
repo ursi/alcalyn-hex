@@ -13,6 +13,9 @@ const plugins = [
     new VueLoaderPlugin(),
     new DefinePlugin({
         BASE_URL: JSON.stringify(process.env.BASE_URL),
+        SITE_TITLE_SUFFIX: JSON.stringify(process.env.SITE_TITLE_SUFFIX),
+        MATOMO_WEBSITE_ID: JSON.stringify(process.env.MATOMO_WEBSITE_ID),
+        MATOMO_SRC: JSON.stringify(process.env.MATOMO_SRC),
         LAST_COMMIT_DATE: JSON.stringify(commitRef.date),
         VERSION: JSON.stringify(commitRef.version),
         __VUE_OPTIONS_API__: false,
