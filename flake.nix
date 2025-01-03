@@ -36,6 +36,11 @@
 
                   # adding these redundent scripts to make shelp more helpful
                   Yarn = {
+                    "yarn.install" = {
+                      description = "yarn install";
+                      script = ''yarn install'';
+                    };
+
                     "yarn.lint" = {
                       description = "yarn lint";
                       script = ''yarn lint "@1"'';
