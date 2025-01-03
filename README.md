@@ -24,13 +24,16 @@ Then run these commands:
 
 ``` bash
 # Install dependencies
-yarn install
+yarn.install
 
 # Create database schema
-yarn db:sync
+db.reset
+
+# Start the databse
+db.start
 
 # Start application
-yarn serve
+yarn.serve
 ```
 
 Wait javascript to be bundled, then the application is available at:
