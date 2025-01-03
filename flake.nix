@@ -75,7 +75,7 @@
                         description = "stop the database server";
                         script = ''
                           lpg on ${pg-dir} down
-                          rm .env
+                          rm .env -f
                         '';
                       };
 
