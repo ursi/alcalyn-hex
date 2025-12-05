@@ -22,17 +22,15 @@
           pkgs = import nixpkgs { inherit system; };
           p = pkgs;
 
-          inherit (inputs.shelpers.lib p) eval-shelpers shelp;
+          inherit (inputs.shelpers.lib p) eval-shelpers;
 
           shelpers =
             eval-shelpers [
-              ({ config, ... }: {
+              ({ shelp, config, ... }: {
                 instructions-order = [ "General" "Yarn" ];
                 root-file = ".git";
                 shelpers."." = {
-                  General = {
-                    shelp = shelp config;
-                  };
+                  General = { inherit shelp; };
 
                   # adding these redundent scripts to make shelp more helpful
                   Yarn = {
@@ -94,8 +92,8 @@
 
                       "db.reset" = {
                         description = "destroy (if it exists) and then recreate the local database";
+                        exit-on-error = false;
                         script = ''
-                          trap - ERR
                           db.destroy
                           db.create
                         '';
